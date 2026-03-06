@@ -1,26 +1,26 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-app.js";
 import {
   getAuth,
+  onAuthStateChanged,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
-  GoogleAuthProvider,
   signInWithPopup,
-  onAuthStateChanged,
+  GoogleAuthProvider,
   signOut,
   updateProfile
 } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-auth.js";
 import {
   getFirestore,
-  enableIndexedDbPersistence,
-  collection,
-  addDoc,
-  setDoc,
-  getDoc,
-  getDocs,
-  deleteDoc,
   doc,
+  getDoc,
+  setDoc,
   updateDoc,
+  deleteDoc,
+  addDoc,
+  getDocs,
+  collection,
   query,
+  where,
   orderBy,
   limit,
   onSnapshot,
@@ -32,10 +32,6 @@ import {
   uploadBytes,
   getDownloadURL
 } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-storage.js";
-import {
-  getFunctions,
-  httpsCallable
-} from "https://www.gstatic.com/firebasejs/12.10.0/firebase-functions.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyDkzD-_MAZscUk1OTCTdI9tZHZfL4J_u-0",
@@ -46,480 +42,682 @@ const firebaseConfig = {
   appId: "1:810548681671:web:1483c2f2b0baa9b49cd7e2",
   measurementId: "G-R5M5NVBY92"
 };
+
 const ADMIN_EMAIL = "ikshihab2002@gmail.com";
-const DEFAULT_AVATAR = "data:image/svg+xml;utf8," + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120"><rect width="120" height="120" rx="24" fill="#143321"/><text x="60" y="72" fill="#dff8e7" font-family="Arial" font-size="40" text-anchor="middle">M</text></svg>`);
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 const storage = getStorage(app);
-const functions = getFunctions(app, "us-central1");
-const bookMatchFn = httpsCallable(functions, "bookMatch");
-const cancelBookingFn = httpsCallable(functions, "cancelBooking");
-const kickPlayerFn = httpsCallable(functions, "kickPlayer");
-enableIndexedDbPersistence(db).catch(() => {});
+const googleProvider = new GoogleAuthProvider();
+
+const state = {
+  user: null,
+  userProfile: null,
+  matches: [],
+  featuredMatch: null,
+  featuredUnsub: null,
+  bookingsUnsub: null,
+  announcementsUnsub: null,
+  adminMatchesUnsub: null
+};
+
+const $ = (id) => document.getElementById(id);
 
 const els = {
-  splash: document.getElementById("splash"),
-  appShell: document.getElementById("appShell"),
-  authView: document.getElementById("authView"),
-  playerView: document.getElementById("playerView"),
-  adminView: document.getElementById("adminView"),
-  profileBtn: document.getElementById("profileBtn"),
-  logoutBtn: document.getElementById("logoutBtn"),
-  toast: document.getElementById("toast"),
-  tabs: [...document.querySelectorAll(".tab")],
-  signupOnly: [...document.querySelectorAll(".signup-only")],
-  authForm: document.getElementById("authForm"),
-  authSubmitBtn: document.getElementById("authSubmitBtn"),
-  authHint: document.getElementById("authHint"),
-  googleBtn: document.getElementById("googleBtn"),
-  emailInput: document.getElementById("emailInput"),
-  passwordInput: document.getElementById("passwordInput"),
-  nameInput: document.getElementById("nameInput"),
-  phoneInput: document.getElementById("phoneInput"),
-  featuredMatch: document.getElementById("featuredMatch"),
-  bookingList: document.getElementById("bookingList"),
-  bookingMeta: document.getElementById("bookingMeta"),
-  announcementList: document.getElementById("announcementList"),
-  adminAnnouncementList: document.getElementById("adminAnnouncementList"),
-  profileCard: document.getElementById("profileCard"),
-  profileDialog: document.getElementById("profileDialog"),
-  closeProfileBtn: document.getElementById("closeProfileBtn"),
-  profileForm: document.getElementById("profileForm"),
-  profileName: document.getElementById("profileName"),
-  profilePhone: document.getElementById("profilePhone"),
-  profilePhotoUrl: document.getElementById("profilePhotoUrl"),
-  profilePhotoFile: document.getElementById("profilePhotoFile"),
-  createMatchForm: document.getElementById("createMatchForm"),
-  matchLocation: document.getElementById("matchLocation"),
-  matchDate: document.getElementById("matchDate"),
-  matchTime: document.getElementById("matchTime"),
-  matchSlots: document.getElementById("matchSlots"),
-  matchStatus: document.getElementById("matchStatus"),
-  matchHeadline: document.getElementById("matchHeadline"),
-  adminMatchList: document.getElementById("adminMatchList"),
-  announcementForm: document.getElementById("announcementForm"),
-  announcementInput: document.getElementById("announcementInput"),
-  statPlayers: document.getElementById("statPlayers"),
-  statMatches: document.getElementById("statMatches"),
-  statOpenMatches: document.getElementById("statOpenMatches"),
-  statBookings: document.getElementById("statBookings")
+  splash: $("splash"),
+  authView: $("authView"),
+  playerView: $("playerView"),
+  adminView: $("adminView"),
+  profileModal: $("profileModal"),
+  logoutBtn: $("logoutBtn"),
+  profileBtn: $("profileBtn"),
+  toast: $("toast"),
+
+  loginTab: $("loginTab"),
+  signupTab: $("signupTab"),
+  authTitle: $("authTitle"),
+  authSubmitBtn: $("authSubmitBtn"),
+  googleBtn: $("googleBtn"),
+  emailInput: $("email"),
+  passwordInput: $("password"),
+
+  playerProfileName: $("playerProfileName"),
+  playerProfileEmail: $("playerProfileEmail"),
+  playerProfilePhone: $("playerProfilePhone"),
+  playerAvatar: $("playerAvatar"),
+
+  announcementList: $("announcementList"),
+
+  heroBadge: $("heroBadge"),
+  heroVenue: $("heroVenue"),
+  heroDate: $("heroDate"),
+  heroPlayers: $("heroPlayers"),
+  heroPayment: $("heroPayment"),
+  heroSlotsText: $("heroSlotsText"),
+  heroProgress: $("heroProgress"),
+  heroBookBtn: $("heroBookBtn"),
+  heroCancelBtn: $("heroCancelBtn"),
+  heroPaymentSelect: $("heroPaymentSelect"),
+  heroDownloadBtn: $("heroDownloadBtn"),
+  playersList: $("playersList"),
+  playersMeta: $("playersMeta"),
+
+  adminMatchForm: $("adminMatchForm"),
+  adminVenue: $("adminVenue"),
+  adminDate: $("adminDate"),
+  adminTime: $("adminTime"),
+  adminSlots: $("adminSlots"),
+  adminLabel: $("adminLabel"),
+  adminMatchesList: $("adminMatchesList"),
+
+  announcementForm: $("announcementForm"),
+  announcementText: $("announcementText"),
+  adminAnnouncementList: $("adminAnnouncementList"),
+
+  profileForm: $("profileForm"),
+  profileName: $("profileName"),
+  profilePhone: $("profilePhone"),
+  profilePhotoUrl: $("profilePhotoUrl"),
+  profilePhotoFile: $("profilePhotoFile"),
+  closeProfileModal: $("closeProfileModal")
 };
 
 let authMode = "login";
-let currentUserProfile = null;
-let currentMatchUnsub = null;
-let bookingsUnsub = null;
-let announcementsUnsub = null;
-let adminMatchesUnsub = null;
-let analyticsUsersUnsub = null;
-let analyticsMatchesUnsub = null;
 
 function showToast(message) {
+  if (!els.toast) return;
   els.toast.textContent = message;
-  els.toast.classList.remove("hidden");
+  els.toast.classList.add("show");
   clearTimeout(showToast._t);
-  showToast._t = setTimeout(() => els.toast.classList.add("hidden"), 2600);
+  showToast._t = setTimeout(() => {
+    els.toast.classList.remove("show");
+  }, 2600);
 }
 
 function setView(view) {
-  [els.authView, els.playerView, els.adminView].forEach(v => v.classList.add("hidden"));
-  view.classList.remove("hidden");
+  [els.authView, els.playerView, els.adminView].forEach((v) => v?.classList.add("hidden"));
+  view?.classList.remove("hidden");
 }
 
-function formatDate(dateStr, timeStr) {
-  if (!dateStr) return "TBD";
-  const date = new Date(`${dateStr}T${timeStr || "00:00"}`);
-  if (Number.isNaN(date.getTime())) return `${dateStr} ${timeStr || ""}`.trim();
-  return new Intl.DateTimeFormat(undefined, { day: "2-digit", month: "short", year: "numeric", hour: "numeric", minute: "2-digit" }).format(date);
+function formatMatchDate(dateStr, timeStr) {
+  if (!dateStr || !timeStr) return "TBD";
+  const d = new Date(`${dateStr}T${timeStr}`);
+  if (isNaN(d)) return `${dateStr} ${timeStr}`;
+  return d.toLocaleString([], {
+    month: "short",
+    day: "2-digit",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit"
+  });
 }
 
 function escapeHtml(str = "") {
-  return str.replace(/[&<>"']/g, m => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': '&quot;', "'": '&#39;' }[m]));
+  return str.replace(/[&<>"']/g, (m) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#039;"
+  }[m]));
 }
 
-function profileFromUser(user) {
-  return {
-    name: user.displayName || currentUserProfile?.name || "Player",
-    email: user.email || "",
-    phone: currentUserProfile?.phone || "",
-    photoURL: user.photoURL || currentUserProfile?.photoURL || DEFAULT_AVATAR,
-    role: user.email === ADMIN_EMAIL ? "admin" : "player"
-  };
+async function ensureUserProfile(user) {
+  const userRef = doc(db, "users", user.uid);
+  const snap = await getDoc(userRef);
+
+  if (!snap.exists()) {
+    const role = user.email === ADMIN_EMAIL ? "admin" : "player";
+    const name = user.displayName || user.email?.split("@")[0] || "Player";
+
+    await setDoc(userRef, {
+      uid: user.uid,
+      name,
+      email: user.email || "",
+      phone: "",
+      photoURL: user.photoURL || "",
+      role,
+      createdAt: serverTimestamp()
+    });
+  }
+
+  const updated = await getDoc(userRef);
+  state.userProfile = updated.data();
+}
+
+function openProfileModal() {
+  els.profileModal?.classList.remove("hidden");
+  const p = state.userProfile || {};
+  els.profileName.value = p.name || "";
+  els.profilePhone.value = p.phone || "";
+  els.profilePhotoUrl.value = p.photoURL || "";
+}
+
+function closeProfileModal() {
+  els.profileModal?.classList.add("hidden");
+}
+
+async function saveProfile(e) {
+  e.preventDefault();
+  try {
+    const user = auth.currentUser;
+    if (!user) return;
+
+    let photoURL = els.profilePhotoUrl.value.trim();
+
+    if (els.profilePhotoFile.files[0]) {
+      const file = els.profilePhotoFile.files[0];
+      const storageRef = ref(storage, `profile-photos/${user.uid}/${file.name}`);
+      await uploadBytes(storageRef, file);
+      photoURL = await getDownloadURL(storageRef);
+    }
+
+    const payload = {
+      name: els.profileName.value.trim() || "Player",
+      phone: els.profilePhone.value.trim(),
+      photoURL
+    };
+
+    await updateDoc(doc(db, "users", user.uid), payload);
+    await updateProfile(user, {
+      displayName: payload.name,
+      photoURL: payload.photoURL || null
+    });
+
+    await ensureUserProfile(user);
+    renderProfileCard(user);
+    closeProfileModal();
+    showToast("Profile updated.");
+  } catch (err) {
+    console.error(err);
+    showToast(err.message || "Profile update failed.");
+  }
 }
 
 function renderProfileCard(user) {
-  const p = profileFromUser(user);
-  els.profileCard.innerHTML = `
-    <div class="profile-mini">
-      <img class="avatar" src="${p.photoURL || DEFAULT_AVATAR}" alt="${escapeHtml(p.name)}" />
-      <div>
-        <strong>${escapeHtml(p.name)}</strong>
-        <div class="muted">${escapeHtml(p.email)}</div>
-        <div class="muted">${escapeHtml(p.phone || "No phone added")}</div>
-      </div>
-    </div>
-  `;
+  const p = state.userProfile || {};
+  const letter = (p.name || user.email || "P").charAt(0).toUpperCase();
+
+  if (els.playerProfileName) els.playerProfileName.textContent = p.name || "Player";
+  if (els.playerProfileEmail) els.playerProfileEmail.textContent = p.email || user.email || "";
+  if (els.playerProfilePhone) els.playerProfilePhone.textContent = p.phone || "No phone added";
+
+  if (els.playerAvatar) {
+    if (p.photoURL) {
+      els.playerAvatar.innerHTML = `<img src="${p.photoURL}" alt="Profile" />`;
+    } else {
+      els.playerAvatar.textContent = letter;
+    }
+  }
 }
 
-async function ensureUserProfile(user, extra = {}) {
-  const userRef = doc(db, "users", user.uid);
-  const snap = await getDoc(userRef);
-  const base = {
-    name: extra.name || user.displayName || snap.data()?.name || "Player",
-    email: user.email || "",
-    phone: extra.phone ?? snap.data()?.phone ?? "",
-    photoURL: extra.photoURL || user.photoURL || snap.data()?.photoURL || DEFAULT_AVATAR,
-    role: user.email === ADMIN_EMAIL ? "admin" : "player",
-    updatedAt: serverTimestamp()
-  };
-  if (!snap.exists()) base.createdAt = serverTimestamp();
-  await setDoc(userRef, base, { merge: true });
-  const fresh = await getDoc(userRef);
-  currentUserProfile = fresh.data();
-}
-
-function switchAuthMode(mode) {
+function authUiMode(mode) {
   authMode = mode;
-  els.tabs.forEach(tab => tab.classList.toggle("active", tab.dataset.tab === mode));
-  els.signupOnly.forEach(el => el.classList.toggle("hidden", mode !== "signup"));
-  els.authSubmitBtn.textContent = mode === "login" ? "Login" : "Create account";
-  els.authHint.textContent = mode === "login" ? "Login to continue." : "Create your player account.";
+  const isLogin = mode === "login";
+  els.loginTab?.classList.toggle("active", isLogin);
+  els.signupTab?.classList.toggle("active", !isLogin);
+  if (els.authTitle) els.authTitle.textContent = isLogin ? "Welcome" : "Create account";
+  if (els.authSubmitBtn) els.authSubmitBtn.textContent = isLogin ? "Login" : "Sign up";
 }
 
-function matchPosterHtml(match, bookedCount, currentUserBooked) {
-  const total = match.totalSlots || 0;
-  const left = Math.max(total - bookedCount, 0);
-  const percent = total ? Math.min((bookedCount / total) * 100, 100) : 0;
-  const statusClass = left > 0 && match.status === "open" ? "status-green" : "status-red";
-  const statusText = match.status !== "open" ? "MATCH CLOSED" : left > 0 ? `${left} SLOTS LEFT` : "MATCH FULL";
-  const paymentSelect = currentUserBooked ? "" : `
-    <select id="paymentMethod" class="select-inline">
-      <option value="bkash">bKash</option>
-      <option value="onsite">On-spot</option>
-    </select>`;
-  return `
-    <div class="poster-card__content">
-      <span class="pill">${escapeHtml(match.headline || "Featured match")}</span>
-      <h2 class="poster-card__title">MATCHDAY</h2>
-      <p class="poster-card__venue">${escapeHtml(match.location)}</p>
-      <div class="poster-meta">
-        <div class="poster-stat">Date & time<strong>${escapeHtml(formatDate(match.date, match.time))}</strong></div>
-        <div class="poster-stat">Players<strong>${bookedCount} / ${total}</strong></div>
-        <div class="poster-stat">Payment<strong>${currentUserBooked?.paymentMethod || "Choose on booking"}</strong></div>
-      </div>
-      <div class="progress-wrap">
-        <div class="progress-label"><span>Slot progress</span><span>${Math.round(percent)}%</span></div>
-        <div class="progress-bar"><span style="width:${percent}%"></span></div>
-      </div>
-      <div class="status-banner ${statusClass}">${statusText}</div>
-      <div class="poster-actions">
-        ${currentUserBooked ? `<button class="secondary-btn" id="cancelBookingBtn">Cancel my booking</button>` : `<button class="primary-btn" id="bookBtn" ${left === 0 || match.status !== "open" ? "disabled" : ""}>Book this match</button>${paymentSelect}`}
-        <button class="ghost-btn" id="downloadPosterBtn">Download poster</button>
-      </div>
-    </div>`;
-}
-
-async function downloadPoster(match, bookedCount) {
-  const canvas = document.createElement("canvas");
-  canvas.width = 1080;
-  canvas.height = 1350;
-  const ctx = canvas.getContext("2d");
-  const grad = ctx.createLinearGradient(0, 0, 1080, 1350);
-  grad.addColorStop(0, "#07140d");
-  grad.addColorStop(1, "#123322");
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-  ctx.fillStyle = "rgba(34,197,94,.12)";
-  ctx.fillRect(70, 70, 940, 1210);
-  ctx.fillStyle = "#ffffff";
-  ctx.font = "900 104px Arial";
-  ctx.fillText("MATCHDAY", 90, 210);
-  ctx.font = "700 62px Arial";
-  ctx.fillText(match.location, 90, 320);
-  ctx.font = "500 42px Arial";
-  ctx.fillStyle = "#d7f5df";
-  ctx.fillText(formatDate(match.date, match.time), 90, 410);
-  ctx.font = "700 52px Arial";
-  ctx.fillStyle = "#86efac";
-  ctx.fillText(`${bookedCount} / ${match.totalSlots} Players`, 90, 500);
-  const left = Math.max(match.totalSlots - bookedCount, 0);
-  ctx.fillStyle = left > 0 && match.status === "open" ? "#86efac" : "#fca5a5";
-  ctx.fillText(match.status !== "open" ? "MATCH CLOSED" : left > 0 ? `${left} SLOTS LEFT` : "MATCH FULL", 90, 585);
-  const link = document.createElement("a");
-  link.href = canvas.toDataURL("image/png");
-  link.download = `matchday-${match.location.replace(/\s+/g, "-").toLowerCase()}.png`;
-  link.click();
-}
-
-async function bookMatch(matchId) {
-  try {
-    const paymentMethod = document.getElementById("paymentMethod")?.value || "onsite";
-    await bookMatchFn({ matchId, paymentMethod });
-    showToast("Booking confirmed.");
-  } catch (err) {
-    showToast(err.message || err?.details || "Booking failed.");
-  }
-}
-
-async function cancelBooking(matchId) {
-  try {
-    await cancelBookingFn({ matchId });
-    showToast("Booking cancelled.");
-  } catch (err) {
-    showToast(err.message || err?.details || "Could not cancel booking.");
-  }
-}
-
-function listenAnnouncements(targetEl) {
-  if (announcementsUnsub) announcementsUnsub();
-  const q = query(collection(db, "announcements"), orderBy("createdAt", "desc"), limit(10));
-  announcementsUnsub = onSnapshot(q, snap => {
-    if (snap.empty) {
-      targetEl.innerHTML = '<div class="empty-state">No announcements yet.</div>';
-      return;
-    }
-    targetEl.innerHTML = snap.docs.map(d => {
-      const a = d.data();
-      return `<div class="announcement-item"><strong>${escapeHtml(a.text)}</strong><div class="muted small">${a.createdAt?.toDate ? a.createdAt.toDate().toLocaleString() : "Just now"}</div></div>`;
-    }).join("");
-  });
-}
-
-function listenFeaturedMatches() {
-  if (currentMatchUnsub) currentMatchUnsub();
-  if (bookingsUnsub) bookingsUnsub();
-  const q = query(collection(db, "matches"), orderBy("date", "asc"), orderBy("time", "asc"));
-  currentMatchUnsub = onSnapshot(q, snap => {
-    if (snap.empty) {
-      els.featuredMatch.innerHTML = '<div class="poster-card__content"><span class="pill">No matches</span><h2 class="poster-card__title">MATCHDAY</h2><p class="poster-card__venue">Admin has not created a match yet.</p></div>';
-      els.bookingList.innerHTML = '<div class="empty-state">No match available.</div>';
-      els.bookingMeta.textContent = "No match available";
-      return;
-    }
-    const docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    const active = docs.find(m => m.status === "open") || docs[0];
-    if (bookingsUnsub) bookingsUnsub();
-    bookingsUnsub = onSnapshot(query(collection(db, "matches", active.id, "bookings"), orderBy("createdAt", "asc")), bsnap => {
-      const bookedCount = bsnap.size;
-      const currentUserBooked = bsnap.docs.find(d => d.id === auth.currentUser?.uid)?.data();
-      els.featuredMatch.innerHTML = matchPosterHtml(active, bookedCount, currentUserBooked);
-      const players = bsnap.docs.map(d => d.data());
-      els.bookingMeta.textContent = `${bookedCount} booked • ${Math.max(active.totalSlots - bookedCount, 0)} left`;
-      els.bookingList.innerHTML = players.length ? players.map((p, idx) => `
-        <div class="booking-card">
-          <strong>${idx + 1}. ${escapeHtml(p.name || "Player")}</strong>
-          <div class="muted">${escapeHtml(p.paymentMethod || "onsite")}</div>
-          <div class="muted small">${escapeHtml(p.phone || "No contact")}</div>
-        </div>`).join("") : '<div class="empty-state">No one has booked yet.</div>';
-      document.getElementById("bookBtn")?.addEventListener("click", () => bookMatch(active.id));
-      document.getElementById("cancelBookingBtn")?.addEventListener("click", () => cancelBooking(active.id));
-      document.getElementById("downloadPosterBtn")?.addEventListener("click", () => downloadPoster(active, bookedCount));
-    });
-  });
-}
-
-function listenAdminMatches() {
-  if (adminMatchesUnsub) adminMatchesUnsub();
-  const q = query(collection(db, "matches"), orderBy("createdAt", "desc"));
-  adminMatchesUnsub = onSnapshot(q, snap => {
-    if (snap.empty) {
-      els.adminMatchList.innerHTML = '<div class="empty-state">No matches created yet.</div>';
-      return;
-    }
-    els.adminMatchList.innerHTML = snap.docs.map(d => `<div class="match-admin-card" data-match-id="${d.id}"><div class="muted">Loading match...</div></div>`).join("");
-    snap.docs.forEach(d => {
-      const match = { id: d.id, ...d.data() };
-      onSnapshot(collection(db, "matches", match.id, "bookings"), bsnap => {
-        const booked = bsnap.size;
-        const players = bsnap.docs.map(p => ({ id: p.id, ...p.data() }));
-        const host = els.adminMatchList.querySelector(`[data-match-id="${match.id}"]`);
-        if (!host) return;
-        host.innerHTML = `
-          <div class="row"><strong>${escapeHtml(match.location)}</strong><span class="pill">${escapeHtml(formatDate(match.date, match.time))}</span></div>
-          <div class="row"><span class="muted">${booked} / ${match.totalSlots} booked</span><span class="muted">Status: ${match.status}</span></div>
-          <div class="row inline-actions">
-            <button class="ghost-btn" data-action="toggle">${match.status === "open" ? "Close" : "Reopen"}</button>
-            <button class="ghost-btn" data-action="poster">Download poster</button>
-          </div>
-          <div class="row booking-grid">${players.length ? players.map(p => `
-            <div class="booking-card">
-              <strong>${escapeHtml(p.name || "Player")}</strong>
-              <div class="muted small">${escapeHtml(p.paymentMethod || "onsite")}</div>
-              <button class="danger-btn" data-kick="${p.id}">Kick player</button>
-            </div>`).join("") : '<div class="empty-state">No bookings yet.</div>'}</div>
-        `;
-        host.querySelector('[data-action="toggle"]').onclick = async () => {
-          await updateDoc(doc(db, "matches", match.id), { status: match.status === "open" ? "closed" : "open" });
-          showToast(match.status === "open" ? "Match closed." : "Match reopened.");
-        };
-        host.querySelector('[data-action="poster"]').onclick = () => downloadPoster(match, booked);
-        host.querySelectorAll("[data-kick]").forEach(btn => {
-          btn.onclick = async () => {
-            try {
-              await kickPlayerFn({ matchId: match.id, userId: btn.dataset.kick });
-              showToast("Player removed.");
-            } catch (err) {
-              showToast(err.message || err?.details || "Could not remove player.");
-            }
-          };
-        });
-      });
-    });
-  });
-}
-
-function listenAdminAnalytics() {
-  analyticsUsersUnsub?.();
-  analyticsMatchesUnsub?.();
-  analyticsUsersUnsub = onSnapshot(collection(db, "users"), usersSnap => {
-    els.statPlayers.textContent = String(usersSnap.docs.filter(d => d.data().role !== "admin").length);
-  });
-  analyticsMatchesUnsub = onSnapshot(collection(db, "matches"), matchesSnap => {
-    const matches = matchesSnap.docs.map(d => d.data());
-    els.statMatches.textContent = String(matches.length);
-    els.statOpenMatches.textContent = String(matches.filter(m => m.status === "open").length);
-    els.statBookings.textContent = String(matches.reduce((sum, m) => sum + Number(m.bookedCount || 0), 0));
-  });
-}
-
-els.tabs.forEach(tab => tab.addEventListener("click", () => switchAuthMode(tab.dataset.tab)));
-
-els.authForm.addEventListener("submit", async e => {
+async function handleAuthSubmit(e) {
   e.preventDefault();
+  const email = els.emailInput.value.trim();
+  const password = els.passwordInput.value;
+
+  if (!email || !password) {
+    showToast("Enter email and password.");
+    return;
+  }
+
   try {
-    const email = els.emailInput.value.trim();
-    const password = els.passwordInput.value.trim();
     if (authMode === "login") {
       await signInWithEmailAndPassword(auth, email, password);
       showToast("Logged in.");
     } else {
-      const name = els.nameInput.value.trim();
-      const phone = els.phoneInput.value.trim();
-      const cred = await createUserWithEmailAndPassword(auth, email, password);
-      if (name) await updateProfile(cred.user, { displayName: name });
-      await ensureUserProfile(cred.user, { name, phone });
+      await createUserWithEmailAndPassword(auth, email, password);
       showToast("Account created.");
     }
   } catch (err) {
-    showToast(err.message || "Authentication failed.");
+    console.error(err);
+    if (err.code === "auth/email-already-in-use") showToast("Email already in use.");
+    else if (err.code === "auth/invalid-credential") showToast("Wrong email or password.");
+    else showToast(err.message || "Authentication failed.");
   }
-});
+}
 
-els.googleBtn.addEventListener("click", async () => {
+async function handleGoogleLogin() {
   try {
-    const provider = new GoogleAuthProvider();
-    const cred = await signInWithPopup(auth, provider);
-    await ensureUserProfile(cred.user);
-    showToast("Signed in with Google.");
+    await signInWithPopup(auth, googleProvider);
+    showToast("Logged in with Google.");
   } catch (err) {
+    console.error(err);
     showToast(err.message || "Google sign-in failed.");
   }
-});
+}
 
-els.logoutBtn.addEventListener("click", async () => {
-  await signOut(auth);
-  showToast("Logged out.");
-});
-
-els.profileBtn.addEventListener("click", () => {
-  const user = auth.currentUser;
-  if (!user) return;
-  const p = profileFromUser(user);
-  els.profileName.value = p.name;
-  els.profilePhone.value = p.phone;
-  els.profilePhotoUrl.value = p.photoURL.startsWith("data:") ? "" : p.photoURL;
-  els.profilePhotoFile.value = "";
-  els.profileDialog.showModal();
-});
-els.closeProfileBtn.addEventListener("click", () => els.profileDialog.close());
-
-els.profileForm.addEventListener("submit", async e => {
-  e.preventDefault();
-  const user = auth.currentUser;
-  if (!user) return;
+async function logout() {
   try {
-    let photoURL = els.profilePhotoUrl.value.trim();
-    const file = els.profilePhotoFile.files?.[0];
-    if (file) {
-      const fileRef = ref(storage, `profilePhotos/${user.uid}/${Date.now()}-${file.name}`);
-      await uploadBytes(fileRef, file);
-      photoURL = await getDownloadURL(fileRef);
-    }
-    const name = els.profileName.value.trim() || "Player";
-    const phone = els.profilePhone.value.trim();
-    await updateProfile(user, { displayName: name, photoURL: photoURL || user.photoURL || DEFAULT_AVATAR });
-    await ensureUserProfile(user, { name, phone, photoURL: photoURL || user.photoURL || DEFAULT_AVATAR });
-    renderProfileCard(user);
-    els.profileDialog.close();
-    showToast("Profile updated.");
+    await signOut(auth);
+    showToast("Logged out.");
   } catch (err) {
-    showToast(err.message || "Could not update profile.");
+    console.error(err);
+    showToast("Logout failed.");
   }
-});
+}
 
-els.createMatchForm?.addEventListener("submit", async e => {
-  e.preventDefault();
-  try {
-    await addDoc(collection(db, "matches"), {
-      location: els.matchLocation.value.trim(),
-      date: els.matchDate.value,
-      time: els.matchTime.value,
-      totalSlots: Number(els.matchSlots.value),
-      bookedCount: 0,
-      status: els.matchStatus.value,
-      headline: els.matchHeadline.value.trim() || "Featured match",
-      createdAt: serverTimestamp()
-    });
-    els.createMatchForm.reset();
-    els.matchSlots.value = 14;
-    els.matchStatus.value = "open";
-    showToast("Match created.");
-  } catch (err) {
-    showToast(err.message || "Could not create match.");
-  }
-});
+function stopLiveListeners() {
+  state.featuredUnsub?.();
+  state.bookingsUnsub?.();
+  state.announcementsUnsub?.();
+  state.adminMatchesUnsub?.();
+  state.featuredUnsub = null;
+  state.bookingsUnsub = null;
+  state.announcementsUnsub = null;
+  state.adminMatchesUnsub = null;
+}
 
-els.announcementForm?.addEventListener("submit", async e => {
-  e.preventDefault();
-  const text = els.announcementInput.value.trim();
-  if (!text) return;
-  try {
-    await addDoc(collection(db, "announcements"), { text, createdAt: serverTimestamp() });
-    els.announcementInput.value = "";
-    showToast("Announcement posted.");
-  } catch (err) {
-    showToast(err.message || "Could not post announcement.");
-  }
-});
+function renderPlayers(bookings) {
+  if (!els.playersList || !els.playersMeta || !state.featuredMatch) return;
 
-onAuthStateChanged(auth, async user => {
-  els.splash.classList.add("is-hidden");
-  els.appShell.classList.remove("hidden");
-  if (!user) {
-    els.profileBtn.classList.add("hidden");
-    els.logoutBtn.classList.add("hidden");
-    setView(els.authView);
+  const total = Number(state.featuredMatch.totalSlots || 0);
+  const booked = bookings.length;
+  const left = Math.max(total - booked, 0);
+
+  els.playersMeta.textContent = `${booked} booked • ${left} left`;
+
+  if (!bookings.length) {
+    els.playersList.innerHTML = `<div class="empty-box">No one has booked yet.</div>`;
     return;
   }
-  await ensureUserProfile(user);
-  els.logoutBtn.classList.remove("hidden");
-  if (user.email === ADMIN_EMAIL) {
-    els.profileBtn.classList.add("hidden");
-    setView(els.adminView);
-    listenAdminMatches();
-    listenAnnouncements(els.adminAnnouncementList);
-    listenAdminAnalytics();
-  } else {
-    els.profileBtn.classList.remove("hidden");
-    setView(els.playerView);
-    renderProfileCard(user);
-    listenFeaturedMatches();
-    listenAnnouncements(els.announcementList);
+
+  els.playersList.innerHTML = bookings.map((b) => {
+    const name = escapeHtml(b.name || b.email || "Player");
+    const payment = escapeHtml(b.paymentMethod || "N/A");
+    const canKick = state.user?.email === ADMIN_EMAIL;
+    return `
+      <div class="player-chip">
+        <div>
+          <strong>${name}</strong>
+          <div>${payment}</div>
+        </div>
+        ${canKick ? `<button class="kick-btn" data-userid="${b.userId}">Kick</button>` : ""}
+      </div>
+    `;
+  }).join("");
+
+  els.playersList.querySelectorAll(".kick-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      await kickPlayerDirect(state.featuredMatch.id, btn.dataset.userid);
+    });
+  });
+}
+
+function updateHero(match, bookings) {
+  if (!match) return;
+
+  const total = Number(match.totalSlots || 0);
+  const booked = bookings.length;
+  const left = Math.max(total - booked, 0);
+  const percent = total ? Math.round((booked / total) * 100) : 0;
+  const myBooking = state.user ? bookings.find((b) => b.userId === state.user.uid) : null;
+  const isClosed = match.status === "closed" || left <= 0;
+
+  els.heroBadge.textContent = match.label || "Match";
+  els.heroVenue.textContent = match.location || "Venue";
+  els.heroDate.textContent = formatMatchDate(match.date, match.time);
+  els.heroPlayers.textContent = `${booked} / ${total}`;
+  els.heroPayment.textContent = myBooking ? myBooking.paymentMethod : "Choose on booking";
+  els.heroSlotsText.textContent = left > 0 ? `${left} SLOTS LEFT` : "MATCH FULL";
+  els.heroSlotsText.classList.toggle("full", left <= 0);
+  els.heroProgress.style.width = `${percent}%`;
+
+  els.heroBookBtn.disabled = !!myBooking || isClosed;
+  els.heroCancelBtn.disabled = !myBooking;
+}
+
+function listenFeaturedMatches() {
+  state.featuredUnsub?.();
+  const q = query(
+    collection(db, "matches"),
+    where("status", "==", "open"),
+    orderBy("date"),
+    limit(1)
+  );
+
+  state.featuredUnsub = onSnapshot(q, (snap) => {
+    if (snap.empty) {
+      state.featuredMatch = null;
+      els.heroVenue.textContent = "No active match";
+      els.heroDate.textContent = "Admin has not created one yet";
+      els.heroPlayers.textContent = "0 / 0";
+      els.heroPayment.textContent = "Choose on booking";
+      els.heroSlotsText.textContent = "NO MATCH";
+      els.heroProgress.style.width = "0%";
+      els.playersList.innerHTML = `<div class="empty-box">No active match available.</div>`;
+      els.playersMeta.textContent = "";
+      return;
+    }
+
+    const d = snap.docs[0];
+    state.featuredMatch = { id: d.id, ...d.data() };
+    listenBookingsForMatch(d.id);
+  }, (err) => {
+    console.error(err);
+    showToast("Could not load match.");
+  });
+}
+
+function listenBookingsForMatch(matchId) {
+  state.bookingsUnsub?.();
+  state.bookingsUnsub = onSnapshot(
+    query(collection(db, "matches", matchId, "bookings"), orderBy("createdAt")),
+    (snap) => {
+      const bookings = snap.docs.map((docSnap) => docSnap.data());
+      renderPlayers(bookings);
+      updateHero(state.featuredMatch, bookings);
+    },
+    (err) => {
+      console.error(err);
+      showToast("Could not load bookings.");
+    }
+  );
+}
+
+function listenAnnouncements(target) {
+  state.announcementsUnsub?.();
+  state.announcementsUnsub = onSnapshot(
+    query(collection(db, "announcements"), orderBy("createdAt", "desc")),
+    (snap) => {
+      if (!target) return;
+      if (snap.empty) {
+        target.innerHTML = `<div class="empty-box">No announcements yet.</div>`;
+        return;
+      }
+
+      target.innerHTML = snap.docs.map((d) => {
+        const a = d.data();
+        const date = a.createdAt?.toDate?.()
+          ? a.createdAt.toDate().toLocaleString()
+          : "";
+        return `
+          <div class="announcement-card">
+            <strong>${escapeHtml(a.text || "")}</strong>
+            <div>${date}</div>
+          </div>
+        `;
+      }).join("");
+    },
+    (err) => {
+      console.error(err);
+      showToast("Could not load announcements.");
+    }
+  );
+}
+
+async function bookMatchDirect() {
+  try {
+    const user = auth.currentUser;
+    const match = state.featuredMatch;
+    if (!user || !match) return;
+
+    const paymentMethod = els.heroPaymentSelect.value;
+    const bookingRef = doc(db, "matches", match.id, "bookings", user.uid);
+    const existingBooking = await getDoc(bookingRef);
+
+    if (existingBooking.exists()) {
+      showToast("You already booked this match.");
+      return;
+    }
+
+    const bookingsSnap = await getDocs(collection(db, "matches", match.id, "bookings"));
+    const bookedCount = bookingsSnap.size;
+
+    if (bookedCount >= Number(match.totalSlots)) {
+      showToast("Match full.");
+      return;
+    }
+
+    const p = state.userProfile || {};
+    await setDoc(bookingRef, {
+      userId: user.uid,
+      email: user.email || "",
+      name: p.name || user.displayName || user.email?.split("@")[0] || "Player",
+      paymentMethod,
+      createdAt: serverTimestamp()
+    });
+
+    showToast("Booked successfully.");
+  } catch (err) {
+    console.error(err);
+    showToast(err.message || "Booking failed.");
+  }
+}
+
+async function cancelBookingDirect() {
+  try {
+    const user = auth.currentUser;
+    const match = state.featuredMatch;
+    if (!user || !match) return;
+
+    await deleteDoc(doc(db, "matches", match.id, "bookings", user.uid));
+    showToast("Booking cancelled.");
+  } catch (err) {
+    console.error(err);
+    showToast(err.message || "Cancel failed.");
+  }
+}
+
+async function kickPlayerDirect(matchId, userId) {
+  try {
+    await deleteDoc(doc(db, "matches", matchId, "bookings", userId));
+    showToast("Player removed.");
+  } catch (err) {
+    console.error(err);
+    showToast(err.message || "Could not remove player.");
+  }
+}
+
+async function createMatch(e) {
+  e.preventDefault();
+  try {
+    const location = els.adminVenue.value.trim();
+    const date = els.adminDate.value;
+    const time = els.adminTime.value;
+    const totalSlots = Number(els.adminSlots.value);
+    const label = els.adminLabel.value.trim() || "Match";
+
+    if (!location || !date || !time || !totalSlots) {
+      showToast("Fill all match fields.");
+      return;
+    }
+
+    await addDoc(collection(db, "matches"), {
+      location,
+      date,
+      time,
+      totalSlots,
+      label,
+      status: "open",
+      createdAt: serverTimestamp()
+    });
+
+    els.adminMatchForm.reset();
+    showToast("Match created.");
+  } catch (err) {
+    console.error(err);
+    showToast(err.message || "Could not create match.");
+  }
+}
+
+function listenAdminMatches() {
+  state.adminMatchesUnsub?.();
+  state.adminMatchesUnsub = onSnapshot(
+    query(collection(db, "matches"), orderBy("createdAt", "desc")),
+    async (snap) => {
+      if (snap.empty) {
+        els.adminMatchesList.innerHTML = `<div class="empty-box">No matches yet.</div>`;
+        return;
+      }
+
+      const htmlParts = [];
+      for (const d of snap.docs) {
+        const m = d.data();
+        const bookingsSnap = await getDocs(collection(db, "matches", d.id, "bookings"));
+        const booked = bookingsSnap.size;
+
+        htmlParts.push(`
+          <div class="admin-match-card">
+            <div>
+              <strong>${escapeHtml(m.location || "Venue")}</strong>
+              <div>${escapeHtml(formatMatchDate(m.date, m.time))}</div>
+              <div>${booked} / ${m.totalSlots} booked • ${m.status}</div>
+            </div>
+            <div class="admin-actions">
+              <button class="toggle-match-btn" data-id="${d.id}" data-status="${m.status}">
+                ${m.status === "open" ? "Close" : "Reopen"}
+              </button>
+            </div>
+          </div>
+        `);
+      }
+
+      els.adminMatchesList.innerHTML = htmlParts.join("");
+
+      els.adminMatchesList.querySelectorAll(".toggle-match-btn").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          const id = btn.dataset.id;
+          const nextStatus = btn.dataset.status === "open" ? "closed" : "open";
+          await updateDoc(doc(db, "matches", id), { status: nextStatus });
+          showToast(`Match ${nextStatus}.`);
+        });
+      });
+    },
+    (err) => {
+      console.error(err);
+      showToast("Could not load admin matches.");
+    }
+  );
+}
+
+async function postAnnouncement(e) {
+  e.preventDefault();
+  try {
+    const text = els.announcementText.value.trim();
+    if (!text) {
+      showToast("Write an announcement.");
+      return;
+    }
+
+    await addDoc(collection(db, "announcements"), {
+      text,
+      createdAt: serverTimestamp()
+    });
+
+    els.announcementForm.reset();
+    showToast("Announcement posted.");
+  } catch (err) {
+    console.error(err);
+    showToast(err.message || "Could not post announcement.");
+  }
+}
+
+function downloadPoster() {
+  const match = state.featuredMatch;
+  if (!match) {
+    showToast("No match available.");
+    return;
+  }
+
+  const canvas = document.createElement("canvas");
+  canvas.width = 1080;
+  canvas.height = 1350;
+  const ctx = canvas.getContext("2d");
+
+  const gradient = ctx.createLinearGradient(0, 0, 1080, 1350);
+  gradient.addColorStop(0, "#03190f");
+  gradient.addColorStop(1, "#1d6b2f");
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  ctx.fillStyle = "rgba(255,255,255,0.08)";
+  ctx.fillRect(60, 60, 960, 1230);
+
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "bold 110px Arial";
+  ctx.fillText("MATCHDAY", 90, 260);
+
+  ctx.font = "bold 64px Arial";
+  ctx.fillText((match.location || "Venue").toUpperCase(), 90, 360);
+
+  ctx.font = "42px Arial";
+  ctx.fillText(formatMatchDate(match.date, match.time), 90, 470);
+
+  const total = Number(match.totalSlots || 0);
+  ctx.font = "bold 54px Arial";
+  ctx.fillText(`TOTAL PLAYERS: ${total}`, 90, 610);
+
+  const url = canvas.toDataURL("image/png");
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `matchday-${match.location || "poster"}.png`;
+  a.click();
+}
+
+els.loginTab?.addEventListener("click", () => authUiMode("login"));
+els.signupTab?.addEventListener("click", () => authUiMode("signup"));
+els.authSubmitBtn?.addEventListener("click", handleAuthSubmit);
+els.googleBtn?.addEventListener("click", handleGoogleLogin);
+els.logoutBtn?.addEventListener("click", logout);
+els.profileBtn?.addEventListener("click", openProfileModal);
+els.closeProfileModal?.addEventListener("click", closeProfileModal);
+els.profileForm?.addEventListener("submit", saveProfile);
+els.heroBookBtn?.addEventListener("click", bookMatchDirect);
+els.heroCancelBtn?.addEventListener("click", cancelBookingDirect);
+els.heroDownloadBtn?.addEventListener("click", downloadPoster);
+els.adminMatchForm?.addEventListener("submit", createMatch);
+els.announcementForm?.addEventListener("submit", postAnnouncement);
+
+authUiMode("login");
+
+onAuthStateChanged(auth, async (user) => {
+  stopLiveListeners();
+
+  if (els.splash) {
+    setTimeout(() => els.splash.classList.add("hidden"), 400);
+  }
+
+  try {
+    if (!user) {
+      state.user = null;
+      state.userProfile = null;
+      els.logoutBtn?.classList.add("hidden");
+      els.profileBtn?.classList.add("hidden");
+      setView(els.authView);
+      return;
+    }
+
+    state.user = user;
+    await ensureUserProfile(user);
+
+    els.logoutBtn?.classList.remove("hidden");
+
+    if (user.email === ADMIN_EMAIL) {
+      els.profileBtn?.classList.add("hidden");
+      setView(els.adminView);
+      listenAdminMatches();
+      listenAnnouncements(els.adminAnnouncementList);
+    } else {
+      els.profileBtn?.classList.remove("hidden");
+      setView(els.playerView);
+      renderProfileCard(user);
+      listenFeaturedMatches();
+      listenAnnouncements(els.announcementList);
+    }
+  } catch (err) {
+    console.error(err);
+    showToast(err.message || "Failed after login.");
+    setView(els.authView);
   }
 });
-
-if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => navigator.serviceWorker.register("./sw.js").catch(() => {}));
-}
