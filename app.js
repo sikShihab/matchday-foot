@@ -26,12 +26,6 @@ import {
   onSnapshot,
   serverTimestamp
 } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-firestore.js";
-import {
-  getStorage,
-  ref,
-  uploadBytes,
-  getDownloadURL
-} from "https://www.gstatic.com/firebasejs/12.10.0/firebase-storage.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyDkzD-_MAZscUk1OTCTdI9tZHZfL4J_u-0",
@@ -48,13 +42,11 @@ const ADMIN_EMAIL = "ikshihab2002@gmail.com";
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-const storage = getStorage(app);
 const googleProvider = new GoogleAuthProvider();
 
 const state = {
   user: null,
   userProfile: null,
-  matches: [],
   featuredMatch: null,
   featuredUnsub: null,
   bookingsUnsub: null,
@@ -95,6 +87,7 @@ const els = {
   heroPlayers: $("heroPlayers"),
   heroPayment: $("heroPayment"),
   heroSlotsText: $("heroSlotsText"),
+  heroPercent: $("heroPercent"),
   heroProgress: $("heroProgress"),
   heroBookBtn: $("heroBookBtn"),
   heroCancelBtn: $("heroCancelBtn"),
@@ -119,25 +112,23 @@ const els = {
   profileName: $("profileName"),
   profilePhone: $("profilePhone"),
   profilePhotoUrl: $("profilePhotoUrl"),
-  profilePhotoFile: $("profilePhotoFile"),
   closeProfileModal: $("closeProfileModal")
 };
 
 let authMode = "login";
 
 function showToast(message) {
-  if (!els.toast) return;
   els.toast.textContent = message;
   els.toast.classList.add("show");
-  clearTimeout(showToast._t);
-  showToast._t = setTimeout(() => {
+  clearTimeout(showToast.timer);
+  showToast.timer = setTimeout(() => {
     els.toast.classList.remove("show");
   }, 2600);
 }
 
 function setView(view) {
-  [els.authView, els.playerView, els.adminView].forEach((v) => v?.classList.add("hidden"));
-  view?.classList.remove("hidden");
+  [els.authView, els.playerView, els.adminView].forEach((v) => v.classList.add("hidden"));
+  view.classList.remove("hidden");
 }
 
 function formatMatchDate(dateStr, timeStr) {
@@ -163,6 +154,26 @@ function escapeHtml(str = "") {
   }[m]));
 }
 
+function stopLiveListeners() {
+  state.featuredUnsub?.();
+  state.bookingsUnsub?.();
+  state.announcementsUnsub?.();
+  state.adminMatchesUnsub?.();
+  state.featuredUnsub = null;
+  state.bookingsUnsub = null;
+  state.announcementsUnsub = null;
+  state.adminMatchesUnsub = null;
+}
+
+function authUiMode(mode) {
+  authMode = mode;
+  const isLogin = mode === "login";
+  els.loginTab.classList.toggle("active", isLogin);
+  els.signupTab.classList.toggle("active", !isLogin);
+  els.authTitle.textContent = isLogin ? "Welcome" : "Create account";
+  els.authSubmitBtn.textContent = isLogin ? "Login" : "Sign up";
+}
+
 async function ensureUserProfile(user) {
   const userRef = doc(db, "users", user.uid);
   const snap = await getDoc(userRef);
@@ -186,16 +197,31 @@ async function ensureUserProfile(user) {
   state.userProfile = updated.data();
 }
 
+function renderProfileCard(user) {
+  const p = state.userProfile || {};
+  const letter = (p.name || user.email || "P").charAt(0).toUpperCase();
+
+  els.playerProfileName.textContent = p.name || "Player";
+  els.playerProfileEmail.textContent = p.email || user.email || "";
+  els.playerProfilePhone.textContent = p.phone || "No phone added";
+
+  if (p.photoURL) {
+    els.playerAvatar.innerHTML = `<img src="${p.photoURL}" alt="Profile" />`;
+  } else {
+    els.playerAvatar.textContent = letter;
+  }
+}
+
 function openProfileModal() {
-  els.profileModal?.classList.remove("hidden");
   const p = state.userProfile || {};
   els.profileName.value = p.name || "";
   els.profilePhone.value = p.phone || "";
   els.profilePhotoUrl.value = p.photoURL || "";
+  els.profileModal.classList.remove("hidden");
 }
 
 function closeProfileModal() {
-  els.profileModal?.classList.add("hidden");
+  els.profileModal.classList.add("hidden");
 }
 
 async function saveProfile(e) {
@@ -204,19 +230,10 @@ async function saveProfile(e) {
     const user = auth.currentUser;
     if (!user) return;
 
-    let photoURL = els.profilePhotoUrl.value.trim();
-
-    if (els.profilePhotoFile.files[0]) {
-      const file = els.profilePhotoFile.files[0];
-      const storageRef = ref(storage, `profile-photos/${user.uid}/${file.name}`);
-      await uploadBytes(storageRef, file);
-      photoURL = await getDownloadURL(storageRef);
-    }
-
     const payload = {
       name: els.profileName.value.trim() || "Player",
       phone: els.profilePhone.value.trim(),
-      photoURL
+      photoURL: els.profilePhotoUrl.value.trim()
     };
 
     await updateDoc(doc(db, "users", user.uid), payload);
@@ -235,34 +252,7 @@ async function saveProfile(e) {
   }
 }
 
-function renderProfileCard(user) {
-  const p = state.userProfile || {};
-  const letter = (p.name || user.email || "P").charAt(0).toUpperCase();
-
-  if (els.playerProfileName) els.playerProfileName.textContent = p.name || "Player";
-  if (els.playerProfileEmail) els.playerProfileEmail.textContent = p.email || user.email || "";
-  if (els.playerProfilePhone) els.playerProfilePhone.textContent = p.phone || "No phone added";
-
-  if (els.playerAvatar) {
-    if (p.photoURL) {
-      els.playerAvatar.innerHTML = `<img src="${p.photoURL}" alt="Profile" />`;
-    } else {
-      els.playerAvatar.textContent = letter;
-    }
-  }
-}
-
-function authUiMode(mode) {
-  authMode = mode;
-  const isLogin = mode === "login";
-  els.loginTab?.classList.toggle("active", isLogin);
-  els.signupTab?.classList.toggle("active", !isLogin);
-  if (els.authTitle) els.authTitle.textContent = isLogin ? "Welcome" : "Create account";
-  if (els.authSubmitBtn) els.authSubmitBtn.textContent = isLogin ? "Login" : "Sign up";
-}
-
-async function handleAuthSubmit(e) {
-  e.preventDefault();
+async function handleAuthSubmit() {
   const email = els.emailInput.value.trim();
   const password = els.passwordInput.value;
 
@@ -307,19 +297,8 @@ async function logout() {
   }
 }
 
-function stopLiveListeners() {
-  state.featuredUnsub?.();
-  state.bookingsUnsub?.();
-  state.announcementsUnsub?.();
-  state.adminMatchesUnsub?.();
-  state.featuredUnsub = null;
-  state.bookingsUnsub = null;
-  state.announcementsUnsub = null;
-  state.adminMatchesUnsub = null;
-}
-
 function renderPlayers(bookings) {
-  if (!els.playersList || !els.playersMeta || !state.featuredMatch) return;
+  if (!state.featuredMatch) return;
 
   const total = Number(state.featuredMatch.totalSlots || 0);
   const booked = bookings.length;
@@ -332,31 +311,32 @@ function renderPlayers(bookings) {
     return;
   }
 
+  const isAdmin = state.user?.email === ADMIN_EMAIL;
+
   els.playersList.innerHTML = bookings.map((b) => {
     const name = escapeHtml(b.name || b.email || "Player");
     const payment = escapeHtml(b.paymentMethod || "N/A");
-    const canKick = state.user?.email === ADMIN_EMAIL;
     return `
       <div class="player-chip">
         <div>
           <strong>${name}</strong>
           <div>${payment}</div>
         </div>
-        ${canKick ? `<button class="kick-btn" data-userid="${b.userId}">Kick</button>` : ""}
+        ${isAdmin ? `<button class="kick-btn" data-userid="${b.userId}">Kick</button>` : ""}
       </div>
     `;
   }).join("");
 
-  els.playersList.querySelectorAll(".kick-btn").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      await kickPlayerDirect(state.featuredMatch.id, btn.dataset.userid);
+  if (isAdmin) {
+    els.playersList.querySelectorAll(".kick-btn").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        await kickPlayerDirect(state.featuredMatch.id, btn.dataset.userid);
+      });
     });
-  });
+  }
 }
 
 function updateHero(match, bookings) {
-  if (!match) return;
-
   const total = Number(match.totalSlots || 0);
   const booked = bookings.length;
   const left = Math.max(total - booked, 0);
@@ -371,42 +351,10 @@ function updateHero(match, bookings) {
   els.heroPayment.textContent = myBooking ? myBooking.paymentMethod : "Choose on booking";
   els.heroSlotsText.textContent = left > 0 ? `${left} SLOTS LEFT` : "MATCH FULL";
   els.heroSlotsText.classList.toggle("full", left <= 0);
+  els.heroPercent.textContent = `${percent}%`;
   els.heroProgress.style.width = `${percent}%`;
-
   els.heroBookBtn.disabled = !!myBooking || isClosed;
   els.heroCancelBtn.disabled = !myBooking;
-}
-
-function listenFeaturedMatches() {
-  state.featuredUnsub?.();
-  const q = query(
-    collection(db, "matches"),
-    where("status", "==", "open"),
-    orderBy("date"),
-    limit(1)
-  );
-
-  state.featuredUnsub = onSnapshot(q, (snap) => {
-    if (snap.empty) {
-      state.featuredMatch = null;
-      els.heroVenue.textContent = "No active match";
-      els.heroDate.textContent = "Admin has not created one yet";
-      els.heroPlayers.textContent = "0 / 0";
-      els.heroPayment.textContent = "Choose on booking";
-      els.heroSlotsText.textContent = "NO MATCH";
-      els.heroProgress.style.width = "0%";
-      els.playersList.innerHTML = `<div class="empty-box">No active match available.</div>`;
-      els.playersMeta.textContent = "";
-      return;
-    }
-
-    const d = snap.docs[0];
-    state.featuredMatch = { id: d.id, ...d.data() };
-    listenBookingsForMatch(d.id);
-  }, (err) => {
-    console.error(err);
-    showToast("Could not load match.");
-  });
 }
 
 function listenBookingsForMatch(matchId) {
@@ -425,12 +373,48 @@ function listenBookingsForMatch(matchId) {
   );
 }
 
+function listenFeaturedMatches() {
+  state.featuredUnsub?.();
+  const q = query(
+    collection(db, "matches"),
+    where("status", "==", "open"),
+    orderBy("date"),
+    limit(1)
+  );
+
+  state.featuredUnsub = onSnapshot(q, (snap) => {
+    if (snap.empty) {
+      state.featuredMatch = null;
+      els.heroBadge.textContent = "No match";
+      els.heroVenue.textContent = "No active match";
+      els.heroDate.textContent = "Admin has not created one yet";
+      els.heroPlayers.textContent = "0 / 0";
+      els.heroPayment.textContent = "Choose on booking";
+      els.heroSlotsText.textContent = "NO MATCH";
+      els.heroSlotsText.classList.remove("full");
+      els.heroPercent.textContent = "0%";
+      els.heroProgress.style.width = "0%";
+      els.playersMeta.textContent = "";
+      els.playersList.innerHTML = `<div class="empty-box">No active match available.</div>`;
+      els.heroBookBtn.disabled = true;
+      els.heroCancelBtn.disabled = true;
+      return;
+    }
+
+    const d = snap.docs[0];
+    state.featuredMatch = { id: d.id, ...d.data() };
+    listenBookingsForMatch(d.id);
+  }, (err) => {
+    console.error(err);
+    showToast("Could not load match.");
+  });
+}
+
 function listenAnnouncements(target) {
   state.announcementsUnsub?.();
   state.announcementsUnsub = onSnapshot(
     query(collection(db, "announcements"), orderBy("createdAt", "desc")),
     (snap) => {
-      if (!target) return;
       if (snap.empty) {
         target.innerHTML = `<div class="empty-box">No announcements yet.</div>`;
         return;
@@ -444,7 +428,7 @@ function listenAnnouncements(target) {
         return `
           <div class="announcement-card">
             <strong>${escapeHtml(a.text || "")}</strong>
-            <div>${date}</div>
+            <div class="muted">${date}</div>
           </div>
         `;
       }).join("");
@@ -462,7 +446,6 @@ async function bookMatchDirect() {
     const match = state.featuredMatch;
     if (!user || !match) return;
 
-    const paymentMethod = els.heroPaymentSelect.value;
     const bookingRef = doc(db, "matches", match.id, "bookings", user.uid);
     const existingBooking = await getDoc(bookingRef);
 
@@ -484,7 +467,7 @@ async function bookMatchDirect() {
       userId: user.uid,
       email: user.email || "",
       name: p.name || user.displayName || user.email?.split("@")[0] || "Player",
-      paymentMethod,
+      paymentMethod: els.heroPaymentSelect.value,
       createdAt: serverTimestamp()
     });
 
@@ -561,21 +544,21 @@ function listenAdminMatches() {
         return;
       }
 
-      const htmlParts = [];
+      const cards = [];
       for (const d of snap.docs) {
         const m = d.data();
         const bookingsSnap = await getDocs(collection(db, "matches", d.id, "bookings"));
         const booked = bookingsSnap.size;
 
-        htmlParts.push(`
+        cards.push(`
           <div class="admin-match-card">
             <div>
               <strong>${escapeHtml(m.location || "Venue")}</strong>
-              <div>${escapeHtml(formatMatchDate(m.date, m.time))}</div>
-              <div>${booked} / ${m.totalSlots} booked • ${m.status}</div>
+              <div class="muted">${escapeHtml(formatMatchDate(m.date, m.time))}</div>
+              <div class="muted">${booked} / ${m.totalSlots} booked • ${m.status}</div>
             </div>
             <div class="admin-actions">
-              <button class="toggle-match-btn" data-id="${d.id}" data-status="${m.status}">
+              <button class="secondary-btn toggle-match-btn" data-id="${d.id}" data-status="${m.status}">
                 ${m.status === "open" ? "Close" : "Reopen"}
               </button>
             </div>
@@ -583,7 +566,7 @@ function listenAdminMatches() {
         `);
       }
 
-      els.adminMatchesList.innerHTML = htmlParts.join("");
+      els.adminMatchesList.innerHTML = cards.join("");
 
       els.adminMatchesList.querySelectorAll(".toggle-match-btn").forEach((btn) => {
         btn.addEventListener("click", async () => {
@@ -654,9 +637,8 @@ function downloadPoster() {
   ctx.font = "42px Arial";
   ctx.fillText(formatMatchDate(match.date, match.time), 90, 470);
 
-  const total = Number(match.totalSlots || 0);
   ctx.font = "bold 54px Arial";
-  ctx.fillText(`TOTAL PLAYERS: ${total}`, 90, 610);
+  ctx.fillText(`TOTAL PLAYERS: ${Number(match.totalSlots || 0)}`, 90, 610);
 
   const url = canvas.toDataURL("image/png");
   const a = document.createElement("a");
@@ -665,35 +647,35 @@ function downloadPoster() {
   a.click();
 }
 
-els.loginTab?.addEventListener("click", () => authUiMode("login"));
-els.signupTab?.addEventListener("click", () => authUiMode("signup"));
-els.authSubmitBtn?.addEventListener("click", handleAuthSubmit);
-els.googleBtn?.addEventListener("click", handleGoogleLogin);
-els.logoutBtn?.addEventListener("click", logout);
-els.profileBtn?.addEventListener("click", openProfileModal);
-els.closeProfileModal?.addEventListener("click", closeProfileModal);
-els.profileForm?.addEventListener("submit", saveProfile);
-els.heroBookBtn?.addEventListener("click", bookMatchDirect);
-els.heroCancelBtn?.addEventListener("click", cancelBookingDirect);
-els.heroDownloadBtn?.addEventListener("click", downloadPoster);
-els.adminMatchForm?.addEventListener("submit", createMatch);
-els.announcementForm?.addEventListener("submit", postAnnouncement);
+els.loginTab.addEventListener("click", () => authUiMode("login"));
+els.signupTab.addEventListener("click", () => authUiMode("signup"));
+els.authSubmitBtn.addEventListener("click", handleAuthSubmit);
+els.googleBtn.addEventListener("click", handleGoogleLogin);
+els.logoutBtn.addEventListener("click", logout);
+els.profileBtn.addEventListener("click", openProfileModal);
+els.closeProfileModal.addEventListener("click", closeProfileModal);
+els.profileForm.addEventListener("submit", saveProfile);
+els.heroBookBtn.addEventListener("click", bookMatchDirect);
+els.heroCancelBtn.addEventListener("click", cancelBookingDirect);
+els.heroDownloadBtn.addEventListener("click", downloadPoster);
+els.adminMatchForm.addEventListener("submit", createMatch);
+els.announcementForm.addEventListener("submit", postAnnouncement);
 
 authUiMode("login");
 
 onAuthStateChanged(auth, async (user) => {
   stopLiveListeners();
 
-  if (els.splash) {
-    setTimeout(() => els.splash.classList.add("hidden"), 400);
-  }
+  setTimeout(() => {
+    els.splash.classList.add("hidden");
+  }, 400);
 
   try {
     if (!user) {
       state.user = null;
       state.userProfile = null;
-      els.logoutBtn?.classList.add("hidden");
-      els.profileBtn?.classList.add("hidden");
+      els.logoutBtn.classList.add("hidden");
+      els.profileBtn.classList.add("hidden");
       setView(els.authView);
       return;
     }
@@ -701,15 +683,15 @@ onAuthStateChanged(auth, async (user) => {
     state.user = user;
     await ensureUserProfile(user);
 
-    els.logoutBtn?.classList.remove("hidden");
+    els.logoutBtn.classList.remove("hidden");
 
     if (user.email === ADMIN_EMAIL) {
-      els.profileBtn?.classList.add("hidden");
+      els.profileBtn.classList.add("hidden");
       setView(els.adminView);
       listenAdminMatches();
       listenAnnouncements(els.adminAnnouncementList);
     } else {
-      els.profileBtn?.classList.remove("hidden");
+      els.profileBtn.classList.remove("hidden");
       setView(els.playerView);
       renderProfileCard(user);
       listenFeaturedMatches();
