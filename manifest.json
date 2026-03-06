@@ -1,0 +1,16 @@
+{
+  "name": "MatchDay",
+  "short_name": "MatchDay",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#07140d",
+  "theme_color": "#16a34a",
+  "icons": [
+    {
+      "src": "assets/logo-placeholder.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
