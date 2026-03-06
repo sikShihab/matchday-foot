@@ -4,255 +4,244 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>MatchDay</title>
-  <meta name="theme-color" content="#16a34a" />
-  <meta name="description" content="MatchDay football booking app" />
   <link rel="manifest" href="manifest.json" />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
   <div id="splash" class="splash">
-    <div class="splash__inner">
-      <img src="assets/logo.png" alt="MatchDay logo" class="splash__logo" onerror="this.src='assets/logo-placeholder.svg'" />
-      <h1>MatchDay</h1>
-      <p>Book. Play. Repeat.</p>
+    <div class="splash-card">
+      <div class="logo-mark">⚽</div>
+      <div>
+        <div class="eyebrow">Football booking</div>
+        <h1>MatchDay</h1>
+      </div>
     </div>
   </div>
 
-  <div class="app-shell hidden" id="appShell">
-    <header class="topbar">
-      <div class="brand">
-        <img src="assets/logo.png" alt="MatchDay logo" class="brand__logo" onerror="this.src='assets/logo-placeholder.svg'" />
-        <div>
-          <span class="eyebrow">Football booking</span>
-          <h1>MatchDay</h1>
-        </div>
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo-mark">⚽</div>
+      <div>
+        <div class="eyebrow">Football booking</div>
+        <h1>MatchDay</h1>
       </div>
-      <div class="topbar__actions">
-        <button id="profileBtn" class="ghost-btn hidden" type="button">Profile</button>
-        <button id="logoutBtn" class="secondary-btn hidden" type="button">Logout</button>
-      </div>
-    </header>
+    </div>
+    <div class="topbar-actions">
+      <button id="profileBtn" class="ghost-btn hidden">Profile</button>
+      <button id="logoutBtn" class="ghost-btn hidden">Logout</button>
+    </div>
+  </header>
 
-    <main class="page">
-      <section id="authView" class="view hidden">
-        <div class="hero-card auth-card">
-          <div class="hero-card__overlay"></div>
-          <div class="hero-card__content auth-layout">
-            <div class="auth-copy">
-              <img src="assets/logo.png" alt="MatchDay logo" class="auth-logo" onerror="this.src='assets/logo-placeholder.svg'" />
-              <span class="pill">Match booking app</span>
-              <h2>Fast football booking for players and admins.</h2>
-              <p>Create matches, see live slots, generate posters, post announcements, and manage bookings in real time.</p>
-            </div>
+  <main class="page">
+    <div id="authView" class="view">
+      <section class="hero-grid">
+        <div class="hero-panel">
+          <div class="hero-badge">Match booking app</div>
+          <h2>Fast football booking for players and admins.</h2>
+          <p>Create matches, see live slots, generate posters, post announcements, and manage bookings in real time.</p>
+        </div>
 
-            <div class="glass-panel form-panel">
-              <div class="section-header">
-                <h3>Welcome</h3>
-                <div class="tabs">
-                  <button type="button" class="tab active" data-tab="login">Login</button>
-                  <button type="button" class="tab" data-tab="signup">Sign up</button>
-                </div>
-              </div>
+        <div class="auth-card">
+          <div class="tabs">
+            <button id="loginTab" class="tab active" type="button">Login</button>
+            <button id="signupTab" class="tab" type="button">Sign up</button>
+          </div>
 
-              <form id="authForm" class="stack-lg">
-                <p class="muted" id="authHint">Login to continue.</p>
-                <div class="field-grid two signup-only hidden">
-                  <label class="field">
-                    <span>Name</span>
-                    <input id="nameInput" type="text" placeholder="Your name" />
-                  </label>
-                  <label class="field signup-only hidden">
-                    <span>Phone</span>
-                    <input id="phoneInput" type="text" placeholder="01xxxxxxxxx" />
-                  </label>
-                </div>
-                <label class="field">
-                  <span>Email</span>
-                  <input id="emailInput" type="email" required placeholder="you@example.com" />
-                </label>
-                <label class="field">
-                  <span>Password</span>
-                  <input id="passwordInput" type="password" required minlength="6" placeholder="Minimum 6 characters" />
-                </label>
-                <button id="authSubmitBtn" class="primary-btn" type="submit">Login</button>
-                <button id="googleBtn" class="secondary-btn" type="button">Continue with Google</button>
-              </form>
-            </div>
+          <h3 id="authTitle">Welcome</h3>
+          <p class="muted">Login to continue.</p>
+
+          <div class="form-group">
+            <label for="email">Email</label>
+            <input id="email" type="email" placeholder="you@example.com" />
+          </div>
+
+          <div class="form-group">
+            <label for="password">Password</label>
+            <input id="password" type="password" placeholder="Password" />
+          </div>
+
+          <div class="auth-actions">
+            <button id="authSubmitBtn" class="primary-btn" type="button">Login</button>
+            <button id="googleBtn" class="secondary-btn" type="button">Continue with Google</button>
           </div>
         </div>
       </section>
+    </div>
 
-      <section id="playerView" class="view hidden">
-        <div class="layout-grid">
-          <div class="main-column stack-xl">
-            <div id="featuredMatch" class="hero-card poster-card"></div>
-            <div class="glass-panel section-panel">
-              <div class="section-header">
-                <div>
-                  <span class="eyebrow">Live bookings</span>
-                  <h3>Players list</h3>
-                </div>
-                <span id="bookingMeta" class="pill">Waiting for match data</span>
+    <div id="playerView" class="view hidden">
+      <section class="dashboard-grid">
+        <section class="hero-match-card">
+          <div class="hero-overlay">
+            <div id="heroBadge" class="hero-badge">Sunday Match Night</div>
+            <h2>MATCHDAY</h2>
+            <h3 id="heroVenue">Venue</h3>
+
+            <div class="stat-row">
+              <div class="stat-box">
+                <div class="stat-label">Date & time</div>
+                <div id="heroDate" class="stat-value">TBD</div>
               </div>
-              <div id="bookingList" class="booking-grid"></div>
+              <div class="stat-box">
+                <div class="stat-label">Players</div>
+                <div id="heroPlayers" class="stat-value">0 / 0</div>
+              </div>
+              <div class="stat-box">
+                <div class="stat-label">Payment</div>
+                <div id="heroPayment" class="stat-value">Choose on booking</div>
+              </div>
+            </div>
+
+            <div class="slot-header">
+              <span>Slot progress</span>
+              <span id="heroPercent">0%</span>
+            </div>
+            <div class="progress-track">
+              <div id="heroProgress" class="progress-fill"></div>
+            </div>
+
+            <div id="heroSlotsText" class="slot-pill">NO MATCH</div>
+
+            <div class="hero-actions">
+              <button id="heroBookBtn" class="primary-btn" type="button">Book this match</button>
+              <button id="heroCancelBtn" class="secondary-btn" type="button">Cancel booking</button>
+              <select id="heroPaymentSelect" class="select-input">
+                <option value="On-spot">On-spot</option>
+                <option value="bKash">bKash</option>
+              </select>
+              <button id="heroDownloadBtn" class="secondary-btn" type="button">Download poster</button>
             </div>
           </div>
+        </section>
 
-          <div class="side-column stack-xl">
-            <div class="glass-panel section-panel">
-              <div class="section-header">
-                <div>
-                  <span class="eyebrow">Your account</span>
-                  <h3>Profile</h3>
-                </div>
+        <aside class="side-stack">
+          <section class="panel-card">
+            <div class="panel-label">Your account</div>
+            <h3>Profile</h3>
+            <div class="profile-card">
+              <div id="playerAvatar" class="avatar">P</div>
+              <div>
+                <div id="playerProfileName" class="profile-name">Player</div>
+                <div id="playerProfileEmail" class="muted">email</div>
+                <div id="playerProfilePhone" class="muted">No phone added</div>
               </div>
-              <div id="profileCard"></div>
             </div>
+          </section>
 
-            <div class="glass-panel section-panel">
-              <div class="section-header">
-                <div>
-                  <span class="eyebrow">Admin updates</span>
-                  <h3>Announcements</h3>
-                </div>
-              </div>
-              <div id="announcementList" class="announcement-list"></div>
-            </div>
-          </div>
-        </div>
+          <section class="panel-card">
+            <div class="panel-label">Admin updates</div>
+            <h3>Announcements</h3>
+            <div id="announcementList" class="stack-list"></div>
+          </section>
+        </aside>
       </section>
 
-      <section id="adminView" class="view hidden">
-        <div class="layout-grid admin-grid">
-          <div class="main-column stack-xl">
-            <div class="glass-panel section-panel">
-              <div class="section-header">
-                <div>
-                  <span class="eyebrow">Admin control</span>
-                  <h3>Create match</h3>
-                </div>
-              </div>
-              <form id="createMatchForm" class="field-grid two">
-                <label class="field">
-                  <span>Location</span>
-                  <input id="matchLocation" type="text" required placeholder="Bashundhara Turf" />
-                </label>
-                <label class="field">
-                  <span>Status</span>
-                  <select id="matchStatus">
-                    <option value="open">Open</option>
-                    <option value="closed">Closed</option>
-                  </select>
-                </label>
-                <label class="field">
-                  <span>Date</span>
-                  <input id="matchDate" type="date" required />
-                </label>
-                <label class="field">
-                  <span>Time</span>
-                  <input id="matchTime" type="time" required />
-                </label>
-                <label class="field">
-                  <span>Total slots</span>
-                  <input id="matchSlots" type="number" min="2" max="50" value="14" required />
-                </label>
-                <label class="field">
-                  <span>Poster headline</span>
-                  <input id="matchHeadline" type="text" placeholder="Friday Night Match" />
-                </label>
-                <div>
-                  <button class="primary-btn" type="submit">Create match</button>
-                </div>
-              </form>
-            </div>
-
-            <div class="glass-panel section-panel">
-              <div class="section-header">
-                <div>
-                  <span class="eyebrow">Admin overview</span>
-                  <h3>Analytics</h3>
-                </div>
-              </div>
-              <div id="analyticsGrid" class="analytics-grid">
-                <div class="stat-card"><span>Total players</span><strong id="statPlayers">0</strong></div>
-                <div class="stat-card"><span>Total matches</span><strong id="statMatches">0</strong></div>
-                <div class="stat-card"><span>Open matches</span><strong id="statOpenMatches">0</strong></div>
-                <div class="stat-card"><span>Total bookings</span><strong id="statBookings">0</strong></div>
-              </div>
-            </div>
-
-            <div class="glass-panel section-panel">
-              <div class="section-header">
-                <div>
-                  <span class="eyebrow">Matches</span>
-                  <h3>Manage live matches</h3>
-                </div>
-              </div>
-              <div id="adminMatchList" class="stack-lg"></div>
-            </div>
+      <section class="panel-card">
+        <div class="section-head">
+          <div>
+            <div class="panel-label">Live bookings</div>
+            <h3>Players list</h3>
           </div>
-
-          <div class="side-column stack-xl">
-            <div class="glass-panel section-panel">
-              <div class="section-header">
-                <div>
-                  <span class="eyebrow">Broadcast</span>
-                  <h3>Post announcement</h3>
-                </div>
-              </div>
-              <form id="announcementForm" class="stack-lg">
-                <label class="field">
-                  <span>Message</span>
-                  <textarea id="announcementInput" rows="5" placeholder="Match starts at 8:00 PM. Reach early."></textarea>
-                </label>
-                <button class="primary-btn" type="submit">Post</button>
-              </form>
-            </div>
-
-            <div class="glass-panel section-panel">
-              <div class="section-header">
-                <div>
-                  <span class="eyebrow">Latest</span>
-                  <h3>Announcements</h3>
-                </div>
-              </div>
-              <div id="adminAnnouncementList" class="announcement-list"></div>
-            </div>
-          </div>
+          <div id="playersMeta" class="meta-pill"></div>
         </div>
+        <div id="playersList" class="players-list"></div>
       </section>
-    </main>
-  </div>
+    </div>
 
-  <dialog id="profileDialog" class="modal">
+    <div id="adminView" class="view hidden">
+      <section class="dashboard-grid admin-layout">
+        <section class="panel-card">
+          <div class="panel-label">Admin tools</div>
+          <h3>Create match</h3>
+
+          <form id="adminMatchForm" class="form-grid">
+            <div class="form-group">
+              <label for="adminVenue">Venue</label>
+              <input id="adminVenue" type="text" placeholder="JAFF" />
+            </div>
+
+            <div class="form-group">
+              <label for="adminDate">Date</label>
+              <input id="adminDate" type="date" />
+            </div>
+
+            <div class="form-group">
+              <label for="adminTime">Time</label>
+              <input id="adminTime" type="time" />
+            </div>
+
+            <div class="form-group">
+              <label for="adminSlots">Total slots</label>
+              <input id="adminSlots" type="number" min="2" placeholder="14" />
+            </div>
+
+            <div class="form-group">
+              <label for="adminLabel">Label</label>
+              <input id="adminLabel" type="text" placeholder="Sunday Match Night" />
+            </div>
+
+            <div class="form-actions full-width">
+              <button class="primary-btn" type="submit">Create match</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="panel-card">
+          <div class="panel-label">Admin updates</div>
+          <h3>Post announcement</h3>
+
+          <form id="announcementForm">
+            <div class="form-group">
+              <label for="announcementText">Announcement</label>
+              <textarea id="announcementText" rows="4" placeholder="Write something important..."></textarea>
+            </div>
+            <div class="form-actions">
+              <button class="primary-btn" type="submit">Post</button>
+            </div>
+          </form>
+
+          <div id="adminAnnouncementList" class="stack-list top-space"></div>
+        </section>
+      </section>
+
+      <section class="panel-card">
+        <div class="panel-label">Created matches</div>
+        <h3>All matches</h3>
+        <div id="adminMatchesList" class="stack-list"></div>
+      </section>
+    </div>
+  </main>
+
+  <div id="profileModal" class="modal hidden">
     <div class="modal-card">
-      <div class="section-header">
+      <div class="modal-head">
         <h3>Edit profile</h3>
-        <button id="closeProfileBtn" class="icon-btn" type="button">✕</button>
+        <button id="closeProfileModal" class="ghost-btn" type="button">Close</button>
       </div>
-      <form id="profileForm" class="stack-lg">
-        <label class="field">
-          <span>Name</span>
-          <input id="profileName" type="text" required />
-        </label>
-        <label class="field">
-          <span>Phone</span>
-          <input id="profilePhone" type="text" placeholder="01xxxxxxxxx" />
-        </label>
-        <label class="field">
-          <span>Photo URL</span>
-          <input id="profilePhotoUrl" type="url" placeholder="https://..." />
-        </label>
-        <label class="field">
-          <span>Or upload photo</span>
-          <input id="profilePhotoFile" type="file" accept="image/*" />
-        </label>
-        <button class="primary-btn" type="submit">Save profile</button>
+
+      <form id="profileForm">
+        <div class="form-group">
+          <label for="profileName">Name</label>
+          <input id="profileName" type="text" placeholder="Your name" />
+        </div>
+
+        <div class="form-group">
+          <label for="profilePhone">Phone</label>
+          <input id="profilePhone" type="text" placeholder="Phone number" />
+        </div>
+
+        <div class="form-group">
+          <label for="profilePhotoUrl">Photo URL</label>
+          <input id="profilePhotoUrl" type="text" placeholder="https://..." />
+        </div>
+
+        <div class="form-actions">
+          <button class="primary-btn" type="submit">Save profile</button>
+        </div>
       </form>
     </div>
-  </dialog>
+  </div>
 
-  <div id="toast" class="toast hidden"></div>
+  <div id="toast" class="toast"></div>
 
   <script type="module" src="app.js"></script>
 </body>
