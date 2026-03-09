@@ -1,43 +1,66 @@
-# MatchDay Complete
+# MatchDay Web App
 
-This package includes the upgraded MatchDay app plus Firebase Cloud Functions for race-safe booking.
+MatchDay is a Firebase-powered football turf booking web app with:
+- player and admin experiences
+- live match slot booking
+- fixtures and highlight feeds
+- announcements and activity
+- responsive mobile navigation
 
-## Included upgrades
-- Server-side booking with Firebase Admin SDK via callable Cloud Functions
-- Auto-updated `bookedCount` and auto-close when a match fills up
-- Admin analytics cards
-- Scheduled function to close past matches
-- SPA frontend for Vercel
+## Current Product Highlights
+- Role-based auth (`admin` vs `player`)
+- Match booking with slot cap per user (max 4)
+- Dynamic player-name collection by slot count:
+  - 2 slots -> primary user + 1 additional player name
+  - 3 slots -> primary user + 2 additional player names
+  - 4 slots -> primary user + 3 additional player names
+- Post-booking auto-navigation to Players List
+- Validation for additional player names:
+  - exact required count
+  - no duplicates
+  - cannot repeat booking user name
+- Admin match creation and announcement management
+- Responsive menu overlay for mobile usability
 
-## Frontend deploy
-1. Put your real logo at `assets/logo.png`
-2. Enable Firebase Authentication: Email/Password and Google
-3. Enable Firestore
-4. Enable Storage
-5. Paste `firebase.rules` into Firestore Rules
-6. Paste `storage.rules` into Storage Rules
-7. Deploy this folder to Vercel
+## Tech Stack
+- Frontend: Vanilla HTML/CSS/JS (ES modules)
+- Backend: Firebase Authentication + Firestore
+- Hosting: Vercel (or any static host)
 
-## Cloud Functions deploy
-1. Install Firebase CLI
-2. From your Firebase project root, copy the `functions` folder there
-3. Run:
-   ```bash
-   firebase login
-   firebase use matchday-44a3c
-   cd functions
-   npm install
-   cd ..
-   firebase deploy --only functions
-   ```
+## Project Structure
+- `index.html` -> app shell and all sections/views
+- `styles.css` -> UI styling and responsive rules
+- `app-main.js` -> main frontend logic (loaded by `index.html`)
+- `app.js` -> synced JS copy
+- `functions/` -> optional Firebase Functions workspace
+- `firestore.rules` / `storage.rules` -> Firebase security rules
 
-## What the callable functions do
-- `bookMatch`: validates auth, prevents duplicates, prevents overbooking, increments count safely
-- `cancelBooking`: removes the current user's booking and reopens match if needed
-- `kickPlayer`: admin removes a player from a match
-- `closePastMatches`: runs every hour and closes matches older than current time
+## Setup
+1. Create/prepare a Firebase project.
+2. Enable Firebase Authentication providers:
+   - Email/Password
+   - Google
+3. Enable Firestore.
+4. Update `firestore.rules` and publish rules.
+5. Verify Firebase config in `app-main.js`.
+6. Deploy the root folder to Vercel.
 
-## Notes
-- The frontend is wired to your Firebase project config.
-- The callable functions are set to `us-central1`. Keep that region in `app.js` unless you deploy elsewhere.
-- The app uses Cloud Functions for booking actions, so deploy the functions before testing booking.
+## Run Locally
+Serve the project with any static server from repo root, for example:
+
+```bash
+npx serve .
+```
+
+Then open the local URL and test login + booking flow.
+
+## Deployment Notes
+- `index.html` currently loads `app-main.js` as the runtime script.
+- Keep `app.js` in sync if you maintain both files.
+- If you deploy Cloud Functions from `functions/`, treat them as optional unless frontend integration is explicitly added.
+
+## Recommended Next Enhancements
+- Convert section switching to explicit URL route aliases (`#live`, `#fixtures`, etc.).
+- Add booking history and receipt archive per user.
+- Add robust input masking/format validation for phone and payment metadata.
+- Add automated tests for booking edge cases and role-based UI access.

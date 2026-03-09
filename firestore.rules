@@ -30,5 +30,10 @@ service cloud.firestore {
       allow read: if isSignedIn();
       allow write: if isAdmin();
     }
+
+    match /activityLogs/{logId} {
+      allow create: if isSignedIn();
+      allow read: if isAdmin();
+    }
   }
 }

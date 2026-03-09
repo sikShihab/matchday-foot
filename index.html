@@ -4,15 +4,20 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>MatchDay</title>
+  <link rel="icon" type="image/svg+xml" href="assets/logo-placeholder.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;700;800&display=swap" rel="stylesheet" />
   <link rel="manifest" href="manifest.json" />
   <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
 </head>
 <body>
   <div id="splash" class="splash">
     <div class="splash-card">
-      <div class="logo-mark">⚽</div>
+      <div class="logo-mark">&#x26BD;</div>
       <div>
-        <div class="eyebrow">Football booking</div>
+        <div class="eyebrow">Turf reservations</div>
         <h1>MatchDay</h1>
       </div>
     </div>
@@ -20,35 +25,42 @@
 
   <header class="topbar">
     <div class="brand">
-      <div class="logo-mark">⚽</div>
+      <div class="logo-mark">&#x26BD;</div>
       <div>
-        <div class="eyebrow">Football booking</div>
+        <div class="eyebrow">Turf reservations</div>
         <h1>MatchDay</h1>
       </div>
     </div>
     <div class="topbar-actions">
       <button id="profileBtn" class="ghost-btn hidden">Profile</button>
       <button id="logoutBtn" class="ghost-btn hidden">Logout</button>
+      <div class="more-menu-wrap">
+        <button id="moreMenuBtn" class="ghost-btn" type="button" aria-label="More menu">...</button>
+        <div id="moreMenuPanel" class="more-menu-panel hidden">
+          <button class="more-menu-item" data-target="liveScoreSection" type="button">Live Soccer</button>
+          <button class="more-menu-item" data-target="fixturesSection" type="button">Fixtures</button>
+          <button class="more-menu-item" data-target="highlightsSection" type="button">Highlights</button>
+          <button class="more-menu-item" data-target="bookingsSection" type="button">Bookings</button>
+          <button class="more-menu-item" data-target="profileSection" type="button">Edit Profile</button>
+          <button class="more-menu-item" data-target="aboutSection" type="button">About Us</button>
+          <button class="more-menu-item" data-target="quickContactSection" type="button">Contact Us</button>
+        </div>
+      </div>
     </div>
   </header>
+  <div id="moreMenuBackdrop" class="menu-backdrop hidden" aria-hidden="true"></div>
 
   <main class="page">
     <div id="authView" class="view">
-      <section class="hero-grid">
-        <div class="hero-panel">
-          <div class="hero-badge">Match booking app</div>
-          <h2>Fast football booking for players and admins.</h2>
-          <p>Create matches, see live slots, generate posters, post announcements, and manage bookings in real time.</p>
-        </div>
-
+      <section class="auth-shell">
         <div class="auth-card">
           <div class="tabs">
-            <button id="loginTab" class="tab active" type="button">Login</button>
-            <button id="signupTab" class="tab" type="button">Sign up</button>
+            <button id="loginTab" class="tab active" type="button">Sign in</button>
+            <button id="signupTab" class="tab" type="button">Create account</button>
           </div>
 
-          <h3 id="authTitle">Welcome</h3>
-          <p class="muted">Login to continue.</p>
+          <h3 id="authTitle">Welcome back</h3>
+          <p class="muted">Sign in to continue.</p>
 
           <div class="form-group">
             <label for="email">Email</label>
@@ -61,20 +73,52 @@
           </div>
 
           <div class="auth-actions">
-            <button id="authSubmitBtn" class="primary-btn" type="button">Login</button>
+            <button id="authSubmitBtn" class="primary-btn" type="button">Sign in</button>
             <button id="googleBtn" class="secondary-btn" type="button">Continue with Google</button>
           </div>
+          <button id="forgotPasswordBtn" class="link-btn" type="button">Forgot password?</button>
         </div>
+
+        <section class="panel-card auth-help">
+          <div class="panel-label">Need help?</div>
+          <h3>Contact</h3>
+          <div class="contact-links">
+            <a id="contactWhatsappLink" class="contact-link" href="#" target="_blank" rel="noopener noreferrer" aria-label="WhatsApp">
+              <span class="contact-logo wa" aria-hidden="true">
+                <svg viewBox="0 0 24 24" role="img"><path d="M20.52 3.48A11.82 11.82 0 0 0 12.08 0C5.52 0 .2 5.32.2 11.88c0 2.1.55 4.15 1.6 5.95L0 24l6.4-1.7a11.87 11.87 0 0 0 5.68 1.45h.01c6.56 0 11.88-5.32 11.88-11.88 0-3.17-1.23-6.15-3.45-8.39zM12.09 21.7h-.01a9.8 9.8 0 0 1-5-1.36l-.36-.22-3.8 1 1.02-3.7-.24-.38a9.78 9.78 0 0 1-1.5-5.18c0-5.43 4.43-9.86 9.88-9.86 2.64 0 5.12 1.02 6.97 2.9a9.8 9.8 0 0 1 2.9 6.96c0 5.45-4.43 9.88-9.86 9.88zm5.42-7.4c-.3-.15-1.77-.87-2.05-.96-.27-.1-.47-.15-.67.15-.2.3-.77.96-.95 1.16-.17.2-.35.22-.65.08-.3-.15-1.28-.47-2.43-1.5-.9-.8-1.5-1.8-1.67-2.1-.18-.3-.02-.45.13-.6.13-.13.3-.35.45-.52.15-.17.2-.3.3-.5.1-.2.05-.37-.02-.52-.08-.15-.67-1.62-.92-2.22-.24-.58-.49-.5-.67-.5h-.57c-.2 0-.52.08-.8.37-.27.3-1.05 1.03-1.05 2.52 0 1.5 1.08 2.95 1.23 3.15.15.2 2.13 3.25 5.16 4.56.72.3 1.28.48 1.72.62.72.22 1.37.2 1.88.12.58-.08 1.77-.72 2.02-1.42.25-.7.25-1.3.17-1.42-.08-.13-.27-.2-.57-.35z"/></svg>
+              </span>
+              <span>WhatsApp</span>
+            </a>
+            <a id="contactEmailLink" class="contact-link" href="mailto:ikshihab2002@gmail.com" aria-label="Email">
+              <span class="contact-logo mail" aria-hidden="true">
+                <svg viewBox="0 0 24 24" role="img"><path d="M2 6.5A2.5 2.5 0 0 1 4.5 4h15A2.5 2.5 0 0 1 22 6.5v11a2.5 2.5 0 0 1-2.5 2.5h-15A2.5 2.5 0 0 1 2 17.5v-11zm2 .4v.14l8 5.28 8-5.28V6.9a.5.5 0 0 0-.5-.5h-15a.5.5 0 0 0-.5.5zm16 2.52-7.45 4.92a1 1 0 0 1-1.1 0L4 9.42V17.5a.5.5 0 0 0 .5.5h15a.5.5 0 0 0 .5-.5V9.42z"/></svg>
+              </span>
+              <span>Email</span>
+            </a>
+            <a id="contactFacebookLink" class="contact-link" href="https://www.facebook.com/shihabb.zz/" target="_blank" rel="noopener noreferrer" aria-label="Facebook">
+              <span class="contact-logo fb" aria-hidden="true">
+                <svg viewBox="0 0 24 24" role="img"><path d="M13.5 22v-8h2.7l.4-3h-3.1V9.1c0-.87.25-1.46 1.5-1.46H16.7V4.9c-.3-.04-1.3-.1-2.47-.1-2.44 0-4.12 1.48-4.12 4.2V11H7.3v3h2.8v8h3.4z"/></svg>
+              </span>
+              <span>Facebook</span>
+            </a>
+          </div>
+        </section>
       </section>
     </div>
 
     <div id="playerView" class="view hidden">
-      <section class="dashboard-grid">
+      <section id="liveScoreSection" class="dashboard-grid">
         <section class="hero-match-card">
           <div class="hero-overlay">
             <div id="heroBadge" class="hero-badge">Sunday Match Night</div>
             <h2>MATCHDAY</h2>
             <h3 id="heroVenue">Venue</h3>
+            <img id="heroFieldImage" class="hero-field-image hidden" alt="Field location map" />
+            <div id="heroMapWrap" class="hero-map-wrap hidden">
+              <iframe id="heroMapFrame" class="hero-map-frame" loading="lazy" referrerpolicy="no-referrer-when-downgrade" title="Venue map"></iframe>
+              <a id="heroMapLink" class="hero-map-link" href="#" target="_blank" rel="noopener noreferrer">Open in Google Maps</a>
+            </div>
+            <div id="heroPhotoStrip" class="hero-photo-strip hidden"></div>
 
             <div class="stat-row">
               <div class="stat-box">
@@ -86,8 +130,8 @@
                 <div id="heroPlayers" class="stat-value">0 / 0</div>
               </div>
               <div class="stat-box">
-                <div class="stat-label">Payment</div>
-                <div id="heroPayment" class="stat-value">Choose on booking</div>
+                <div class="stat-label">Slot fee</div>
+                <div id="heroPayment" class="stat-value">Set by admin</div>
               </div>
             </div>
 
@@ -102,19 +146,27 @@
             <div id="heroSlotsText" class="slot-pill">NO MATCH</div>
 
             <div class="hero-actions">
-              <button id="heroBookBtn" class="primary-btn" type="button">Book this match</button>
-              <button id="heroCancelBtn" class="secondary-btn" type="button">Cancel booking</button>
+              <button id="heroBookBtn" class="primary-btn" type="button">Reserve slot</button>
+              <button id="heroCancelBtn" class="secondary-btn" type="button">Cancel slot</button>
+              <input id="heroSlotQty" class="select-input" type="number" min="1" max="4" value="1" />
               <select id="heroPaymentSelect" class="select-input">
                 <option value="On-spot">On-spot</option>
                 <option value="bKash">bKash</option>
               </select>
-              <button id="heroDownloadBtn" class="secondary-btn" type="button">Download poster</button>
+              <button id="heroDownloadBtn" class="secondary-btn" type="button">Download match poster</button>
+            </div>
+            <div id="heroFeePreview" class="muted fee-preview">1 slot selected</div>
+            <div id="extraNamesWrap" class="form-group hidden">
+              <label>Player names for this booking</label>
+              <div class="extra-name-note">Primary slot holder (you)</div>
+              <input id="bookerPrimaryName" type="text" readonly />
+              <div id="extraPlayersList" class="extra-players-grid"></div>
             </div>
           </div>
         </section>
 
         <aside class="side-stack">
-          <section class="panel-card">
+          <section id="profileSection" class="panel-card">
             <div class="panel-label">Your account</div>
             <h3>Profile</h3>
             <div class="profile-card">
@@ -122,7 +174,7 @@
               <div>
                 <div id="playerProfileName" class="profile-name">Player</div>
                 <div id="playerProfileEmail" class="muted">email</div>
-                <div id="playerProfilePhone" class="muted">No phone added</div>
+                <div id="playerProfilePhone" class="muted">No phone saved</div>
               </div>
             </div>
           </section>
@@ -135,7 +187,7 @@
         </aside>
       </section>
 
-      <section class="panel-card">
+      <section id="bookingsSection" class="panel-card">
         <div class="section-head">
           <div>
             <div class="panel-label">Live bookings</div>
@@ -145,8 +197,41 @@
         </div>
         <div id="playersList" class="players-list"></div>
       </section>
-    </div>
 
+      <section id="fixturesSection" class="panel-card fixtures-panel">
+        <div class="section-head">
+          <div>
+            <div class="panel-label">Live football</div>
+            <h3>Fixtures & Scores</h3>
+          </div>
+          <button id="refreshFixturesBtn" class="secondary-btn" type="button">Refresh</button>
+        </div>
+        <div id="fixturesDate" class="muted"></div>
+        <div id="fixturesList" class="fixtures-list"></div>
+      </section>
+
+      <section id="highlightsSection" class="panel-card highlights-panel">
+        <div class="panel-label">Watch zone</div>
+        <h3>Latest Football Highlights</h3>
+        <div id="highlightsList" class="video-grid"></div>
+      </section>
+
+      <section id="aboutSection" class="panel-card info-section">
+        <div class="panel-label">About MatchDay</div>
+        <h3>Fast booking, live football, one app</h3>
+        <p class="muted">Track major football events, reserve your slots quickly, and stay updated with matchday activity in a premium clean interface.</p>
+      </section>
+
+      <section id="quickContactSection" class="panel-card info-section">
+        <div class="panel-label">Quick contact</div>
+        <h3>Support & Social</h3>
+        <div class="contact-links">
+          <a id="contactWhatsappLinkPlayer" class="contact-link" href="#" target="_blank" rel="noopener noreferrer">WhatsApp</a>
+          <a id="contactEmailLinkPlayer" class="contact-link" href="#">Email</a>
+          <a id="contactFacebookLinkPlayer" class="contact-link" href="#" target="_blank" rel="noopener noreferrer">Facebook</a>
+        </div>
+      </section>
+    </div>
     <div id="adminView" class="view hidden">
       <section class="dashboard-grid admin-layout">
         <section class="panel-card">
@@ -170,8 +255,13 @@
             </div>
 
             <div class="form-group">
-              <label for="adminSlots">Total slots</label>
+              <label for="adminSlots">Available slots</label>
               <input id="adminSlots" type="number" min="2" placeholder="14" />
+            </div>
+
+            <div class="form-group">
+              <label for="adminFee">Slot fee (BDT)</label>
+              <input id="adminFee" type="number" min="0" step="10" placeholder="250" />
             </div>
 
             <div class="form-group">
@@ -179,15 +269,33 @@
               <input id="adminLabel" type="text" placeholder="Sunday Match Night" />
             </div>
 
+            <div class="form-group full-width">
+              <label for="adminPhotos">Venue photos (one URL per line)</label>
+              <textarea id="adminPhotos" rows="3" placeholder="https://..."></textarea>
+            </div>
+
+            <input id="adminLat" type="hidden" />
+            <input id="adminLng" type="hidden" />
+            <input id="adminMapImage" type="hidden" />
+
             <div class="form-actions full-width">
-              <button class="primary-btn" type="submit">Create match</button>
+              <button id="openMapPickerBtn" class="secondary-btn" type="button">Pick field location</button>
+            </div>
+
+            <div id="adminMapPreviewWrap" class="map-preview-wrap hidden full-width">
+              <img id="adminMapPreview" class="admin-map-preview" alt="Field map preview" />
+              <div id="adminMapCoords" class="muted"></div>
+            </div>
+
+            <div class="form-actions full-width">
+              <button class="primary-btn" type="submit">Publish match</button>
             </div>
           </form>
         </section>
 
         <section class="panel-card">
           <div class="panel-label">Admin updates</div>
-          <h3>Post announcement</h3>
+          <h3>Broadcast notice</h3>
 
           <form id="announcementForm">
             <div class="form-group">
@@ -195,7 +303,7 @@
               <textarea id="announcementText" rows="4" placeholder="Write something important..."></textarea>
             </div>
             <div class="form-actions">
-              <button class="primary-btn" type="submit">Post</button>
+              <button class="primary-btn" type="submit">Publish</button>
             </div>
           </form>
 
@@ -205,11 +313,17 @@
 
       <section class="panel-card">
         <div class="panel-label">Created matches</div>
-        <h3>All matches</h3>
+        <h3>All match sessions</h3>
         <div id="adminMatchesList" class="stack-list"></div>
       </section>
+
+      <section class="panel-card">
+        <div class="panel-label">Live audit</div>
+        <h3>Slot activity timeline</h3>
+        <div id="adminActivityList" class="stack-list"></div>
+      </section>
     </div>
-  </main>
+</main>
 
   <div id="profileModal" class="modal hidden">
     <div class="modal-card">
@@ -241,8 +355,122 @@
     </div>
   </div>
 
+  <div id="mapPickerModal" class="modal hidden">
+    <div class="modal-card map-modal-card">
+      <div class="modal-head">
+        <h3>Select field location</h3>
+        <button id="closeMapPickerModal" class="ghost-btn" type="button">Close</button>
+      </div>
+      <div class="map-search-row">
+        <input id="mapSearchInput" type="text" placeholder="Search place in Bangladesh (Dhaka, Chittagong, Sylhet...)" />
+        <button id="mapSearchBtn" class="secondary-btn" type="button">Search</button>
+      </div>
+      <div id="mapSearchResults" class="map-search-results"></div>
+      <div id="adminMapCanvas" class="map-canvas"></div>
+      <div id="mapPickInfo" class="muted">Click or tap on the map to place the field pin.</div>
+      <div class="form-actions">
+        <button id="confirmMapPickerBtn" class="primary-btn" type="button">Use this location</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="bkashModal" class="modal hidden">
+    <div class="modal-card bkash-modal-card">
+      <div class="modal-head">
+        <h3>bKash payment</h3>
+        <button id="closeBkashModal" class="ghost-btn" type="button">Close</button>
+      </div>
+      <p class="muted">Scan the QR code and send your payment before confirming booking.</p>
+      <div class="form-group">
+        <label for="bkashLast3Input">Last 3 digits of your bKash number</label>
+        <input id="bkashLast3Input" type="text" maxlength="3" placeholder="e.g. 269" />
+      </div>
+      <img id="bkashQrImage" class="bkash-qr" alt="bKash QR code" />
+      <div class="bkash-number-row">
+        <span>bKash number:</span>
+        <a id="bkashNumberLink" href="#" target="_blank" rel="noopener noreferrer"><strong id="bkashNumberText">01623729249</strong></a>
+      </div>
+      <div class="form-actions">
+        <button id="bkashContinueBtn" class="primary-btn" type="button">I have paid, continue booking</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="receiptModal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-head">
+        <h3>Booking receipt</h3>
+        <button id="closeReceiptModal" class="ghost-btn" type="button">Close</button>
+      </div>
+      <div id="receiptBody" class="receipt-body"></div>
+      <div class="form-actions">
+        <button id="downloadReceiptBtn" class="secondary-btn" type="button">Download receipt (JPG)</button>
+      </div>
+    </div>
+  </div>
   <div id="toast" class="toast"></div>
 
-  <script type="module" src="app.js"></script>
+  <script>
+    // Failsafe: never let the splash block the app forever.
+    window.setTimeout(() => {
+      const splash = document.getElementById("splash");
+      if (splash) splash.classList.add("hidden");
+    }, 2500);
+  </script>
+  <script>
+    // Dev safety: clear old service workers/caches so latest JS always loads.
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.getRegistrations().then((regs) => {
+        regs.forEach((reg) => reg.unregister());
+      });
+    }
+    if ("caches" in window) {
+      caches.keys().then((keys) => {
+        keys.filter((k) => k.startsWith("matchday-")).forEach((k) => caches.delete(k));
+      });
+    }
+  </script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script type="module" src="app-main.js?v=20260309i"></script>
 </body>
 </html>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
