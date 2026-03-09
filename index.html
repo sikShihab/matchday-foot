@@ -35,15 +35,36 @@
       <button id="profileBtn" class="ghost-btn hidden">Profile</button>
       <button id="logoutBtn" class="ghost-btn hidden">Logout</button>
       <div class="more-menu-wrap">
-        <button id="moreMenuBtn" class="ghost-btn" type="button" aria-label="More menu">...</button>
+        <button id="moreMenuBtn" class="ghost-btn" type="button" aria-label="Open quick menu">&#8942;</button>
         <div id="moreMenuPanel" class="more-menu-panel hidden">
-          <button class="more-menu-item" data-target="liveScoreSection" type="button">Live Soccer</button>
-          <button class="more-menu-item" data-target="fixturesSection" type="button">Fixtures</button>
-          <button class="more-menu-item" data-target="highlightsSection" type="button">Highlights</button>
-          <button class="more-menu-item" data-target="bookingsSection" type="button">Bookings</button>
-          <button class="more-menu-item" data-target="profileSection" type="button">Edit Profile</button>
-          <button class="more-menu-item" data-target="aboutSection" type="button">About Us</button>
-          <button class="more-menu-item" data-target="quickContactSection" type="button">Contact Us</button>
+          <button class="more-menu-item" data-target="liveScoreSection" type="button">
+            <span class="menu-item-icon" aria-hidden="true">HM</span>
+            <span class="menu-item-copy"><strong>Home</strong><small>Main dashboard and live booking status</small></span>
+          </button>
+          <button class="more-menu-item" data-target="fixturesSection" type="button">
+            <span class="menu-item-icon" aria-hidden="true">FX</span>
+            <span class="menu-item-copy"><strong>Live Soccer</strong><small>Live, upcoming, and results fixtures</small></span>
+          </button>
+          <button class="more-menu-item" data-target="highlightsSection" type="button">
+            <span class="menu-item-icon" aria-hidden="true">HL</span>
+            <span class="menu-item-copy"><strong>Highlights</strong><small>Top football clips and highlights</small></span>
+          </button>
+          <button class="more-menu-item" data-target="bookingsSection" type="button">
+            <span class="menu-item-icon" aria-hidden="true">BK</span>
+            <span class="menu-item-copy"><strong>Bookings</strong><small>Your current and previous reservations</small></span>
+          </button>
+          <button class="more-menu-item" data-target="profileSection" type="button">
+            <span class="menu-item-icon" aria-hidden="true">PR</span>
+            <span class="menu-item-copy"><strong>Edit Profile</strong><small>Update your name, phone, and photo</small></span>
+          </button>
+          <button class="more-menu-item" data-target="aboutSection" type="button">
+            <span class="menu-item-icon" aria-hidden="true">AB</span>
+            <span class="menu-item-copy"><strong>About Us</strong><small>Club details and venue information</small></span>
+          </button>
+          <button class="more-menu-item" data-target="quickContactSection" type="button">
+            <span class="menu-item-icon" aria-hidden="true">CT</span>
+            <span class="menu-item-copy"><strong>Contact Us</strong><small>WhatsApp, email, and social links</small></span>
+          </button>
         </div>
       </div>
     </div>
@@ -156,6 +177,7 @@
               <button id="heroDownloadBtn" class="secondary-btn" type="button">Download match poster</button>
             </div>
             <div id="heroFeePreview" class="muted fee-preview">1 slot selected</div>
+            <div id="heroPaymentNotice" class="muted fee-preview">Amount shown is estimated and may change if slot count or payment method changes. On-spot payment stays due until paid.</div>
             <div id="extraNamesWrap" class="form-group hidden">
               <label>Player names for this booking</label>
               <div class="extra-name-note">Primary slot holder (you)</div>
@@ -185,26 +207,43 @@
             <div id="announcementList" class="stack-list"></div>
           </section>
         </aside>
+
+        <section class="panel-card full-width">
+          <div class="section-head">
+            <div>
+              <div class="panel-label">Live bookings</div>
+              <h3>Players list</h3>
+            </div>
+            <div id="playersMeta" class="meta-pill"></div>
+          </div>
+          <div id="playersList" class="players-list"></div>
+        </section>
       </section>
 
       <section id="bookingsSection" class="panel-card">
         <div class="section-head">
           <div>
-            <div class="panel-label">Live bookings</div>
-            <h3>Players list</h3>
+            <div class="panel-label">My timeline</div>
+            <h3>Previous bookings</h3>
           </div>
-          <div id="playersMeta" class="meta-pill"></div>
+          <div id="myBookingsMeta" class="meta-pill"></div>
         </div>
-        <div id="playersList" class="players-list"></div>
+        <div id="myBookingsList" class="stack-list"></div>
       </section>
 
       <section id="fixturesSection" class="panel-card fixtures-panel">
         <div class="section-head">
           <div>
             <div class="panel-label">Live football</div>
-            <h3>Fixtures & Scores</h3>
+            <h3>Live Soccer Center</h3>
           </div>
           <button id="refreshFixturesBtn" class="secondary-btn" type="button">Refresh</button>
+        </div>
+        <div class="fixture-tabs">
+          <button id="fixtureTabLive" class="chip-tab active" type="button">Live</button>
+          <button id="fixtureTabUpcoming" class="chip-tab" type="button">Upcoming</button>
+          <button id="fixtureTabResults" class="chip-tab" type="button">Results</button>
+          <button id="fixtureTabAll" class="chip-tab" type="button">All</button>
         </div>
         <div id="fixturesDate" class="muted"></div>
         <div id="fixturesList" class="fixtures-list"></div>
@@ -212,7 +251,12 @@
 
       <section id="highlightsSection" class="panel-card highlights-panel">
         <div class="panel-label">Watch zone</div>
-        <h3>Latest Football Highlights</h3>
+        <h3>Football Highlight Search</h3>
+        <div class="highlight-search-row">
+          <input id="highlightsSearchInput" type="text" placeholder="Search team, league, match..." />
+          <button id="highlightsSearchBtn" class="secondary-btn" type="button">Search</button>
+        </div>
+        <div id="highlightsMeta" class="muted"></div>
         <div id="highlightsList" class="video-grid"></div>
       </section>
 
@@ -320,6 +364,8 @@
       <section class="panel-card">
         <div class="panel-label">Live audit</div>
         <h3>Slot activity timeline</h3>
+        <div id="adminActivitySummary" class="admin-analytics-grid"></div>
+        <div id="adminActivityUsers" class="admin-user-stats top-space"></div>
         <div id="adminActivityList" class="stack-list"></div>
       </section>
     </div>
@@ -381,6 +427,7 @@
         <button id="closeBkashModal" class="ghost-btn" type="button">Close</button>
       </div>
       <p class="muted">Scan the QR code and send your payment before confirming booking.</p>
+      <p id="bkashPayableText" class="muted">Payable now: BDT 0</p>
       <div class="form-group">
         <label for="bkashLast3Input">Last 3 digits of your bKash number</label>
         <input id="bkashLast3Input" type="text" maxlength="3" placeholder="e.g. 269" />
@@ -408,6 +455,10 @@
       </div>
     </div>
   </div>
+  <div id="globalLoading" class="global-loading hidden">
+    <div class="loading-orb"></div>
+    <div id="globalLoadingText" class="loading-text">Loading...</div>
+  </div>
   <div id="toast" class="toast"></div>
 
   <script>
@@ -431,9 +482,26 @@
     }
   </script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <script type="module" src="app-main.js?v=20260309i"></script>
+  <script type="module" src="app-main.js?v=20260310e"></script>
 </body>
 </html>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

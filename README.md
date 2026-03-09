@@ -64,3 +64,10 @@ Then open the local URL and test login + booking flow.
 - Add booking history and receipt archive per user.
 - Add robust input masking/format validation for phone and payment metadata.
 - Add automated tests for booking edge cases and role-based UI access.
+
+## Sportmonks Integration
+- The app now fetches fixtures/live data through Vercel API route: /api/sportmonks.
+- Add Vercel environment variable: SPORTMONKS_API_TOKEN (Project Settings -> Environment Variables).
+- Do not expose the Sportmonks token in frontend JS.
+- Lineup data is loaded on-demand per fixture from the same proxy route.
+

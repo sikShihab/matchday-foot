@@ -20,6 +20,7 @@ import {
   addDoc,
   getDocs,
   collection,
+  collectionGroup,
   query,
   where,
   orderBy,
@@ -59,7 +60,13 @@ const state = {
   announcementsUnsub: null,
   adminMatchesUnsub: null,
   activityUnsub: null,
-  playerPage: "liveScoreSection"
+  myBookingsUnsub: null,
+  playerPage: "liveScoreSection",
+  fixturesData: [],
+  fixtureMode: "live",
+  highlightsData: [],
+  fixturesRefreshTimer: null,
+  fixturesLastLoadedAt: 0
 };
 
 const $ = (id) => document.getElementById(id);
@@ -115,10 +122,12 @@ const els = {
   heroSlotQty: $("heroSlotQty"),
   heroPaymentSelect: $("heroPaymentSelect"),
   heroFeePreview: $("heroFeePreview"),
+  heroPaymentNotice: $("heroPaymentNotice"),
   heroDownloadBtn: $("heroDownloadBtn"),
   bkashModal: $("bkashModal"),
   closeBkashModal: $("closeBkashModal"),
   bkashContinueBtn: $("bkashContinueBtn"),
+  bkashPayableText: $("bkashPayableText"),
   bkashQrImage: $("bkashQrImage"),
   bkashNumberText: $("bkashNumberText"),
   bkashNumberLink: $("bkashNumberLink"),
@@ -147,6 +156,8 @@ const els = {
   announcementText: $("announcementText"),
   adminAnnouncementList: $("adminAnnouncementList"),
   adminActivityList: $("adminActivityList"),
+  adminActivitySummary: $("adminActivitySummary"),
+  adminActivityUsers: $("adminActivityUsers"),
 
   profileForm: $("profileForm"),
   profileName: $("profileName"),
@@ -165,6 +176,15 @@ const els = {
   fixturesList: $("fixturesList"),
   refreshFixturesBtn: $("refreshFixturesBtn"),
   highlightsList: $("highlightsList"),
+  highlightsSearchInput: $("highlightsSearchInput"),
+  highlightsSearchBtn: $("highlightsSearchBtn"),
+  highlightsMeta: $("highlightsMeta"),
+  fixtureTabLive: $("fixtureTabLive"),
+  fixtureTabUpcoming: $("fixtureTabUpcoming"),
+  fixtureTabResults: $("fixtureTabResults"),
+  fixtureTabAll: $("fixtureTabAll"),
+  myBookingsList: $("myBookingsList"),
+  myBookingsMeta: $("myBookingsMeta"),
   contactWhatsappLink: $("contactWhatsappLink"),
   contactPhoneLink: $("contactPhoneLink"),
   contactEmailLink: $("contactEmailLink"),
@@ -235,6 +255,8 @@ const INTERNATIONAL_KEYWORDS = [
 
 const TEAM_BADGE_CACHE = new Map();
 const LEAGUE_LOGO_CACHE = new Map();
+const LINEUP_CACHE = new Map();
+const SPORTMONKS_PROXY_URL = "/api/sportmonks";
 let RESOLVED_COMPETITIONS = null;
 
 const POPULAR_LEAGUE_KEYWORDS = [
@@ -278,10 +300,16 @@ function setPlayerPage(targetId, options = {}) {
     const isActive = id === next;
     section.classList.toggle("hidden", !isActive);
     section.classList.toggle("view-enter", isActive);
+    if (isActive) {
+      section.classList.remove("route-shift");
+      void section.offsetWidth;
+      section.classList.add("route-shift");
+    }
   });
 
   markActivePlayerMenu(next);
   if (updateHash) window.history.replaceState(null, "", `#${next}`);
+  if (next === "fixturesSection") loadDailyFixtures({ silent: true });
 }
 
 function showToast(message) {
@@ -293,6 +321,16 @@ function showToast(message) {
   }, 2600);
 }
 
+
+function animateListEntrance(container, selector) {
+  if (!container) return;
+  const items = container.querySelectorAll(selector);
+  items.forEach((item, idx) => {
+    item.classList.remove("stagger-in");
+    item.style.animationDelay = String(Math.min(idx * 50, 360)) + "ms";
+    item.classList.add("stagger-in");
+  });
+}
 function setView(view) {
   [els.authView, els.playerView, els.adminView].forEach((v) => {
     v.classList.add("hidden");
@@ -340,16 +378,34 @@ function escapeHtml(str = "") {
   }[m]));
 }
 
+function stopFixturesAutoRefresh() {
+  if (state.fixturesRefreshTimer) {
+    clearInterval(state.fixturesRefreshTimer);
+    state.fixturesRefreshTimer = null;
+  }
+}
+
+function startFixturesAutoRefresh() {
+  stopFixturesAutoRefresh();
+  state.fixturesRefreshTimer = setInterval(() => {
+    const playerVisible = !els.playerView?.classList.contains("hidden");
+    if (!playerVisible) return;
+    loadDailyFixtures({ silent: true });
+  }, 45000);
+}
 function stopLiveListeners() {
   state.featuredUnsub?.();
   state.bookingsUnsub?.();
   state.announcementsUnsub?.();
   state.adminMatchesUnsub?.();
+  state.myBookingsUnsub?.();
   state.featuredUnsub = null;
   state.bookingsUnsub = null;
   state.announcementsUnsub = null;
   state.adminMatchesUnsub = null;
   state.activityUnsub = null;
+  state.myBookingsUnsub = null;
+  stopFixturesAutoRefresh();
 }
 
 function getMapSnapshotUrl(lat, lng) {
@@ -481,11 +537,11 @@ function toWhatsAppUrl(localPhone) {
 }
 
 function initStaticUi() {
-  const bkashQrFallbackUrl = `https://quickchart.io/qr?text=${encodeURIComponent(BKASH_PAYMENT_NUMBER)}&size=420`;
   if (els.bkashQrImage) {
     els.bkashQrImage.src = BKASH_QR_IMAGE_URL;
     els.bkashQrImage.onerror = () => {
-      els.bkashQrImage.src = bkashQrFallbackUrl;
+      els.bkashQrImage.alt = "bKash QR not found. Upload exact QR image to assets/bkash-qr.png";
+      showToast("bKash QR image missing. Please upload assets/bkash-qr.png");
     };
   }
   if (els.bkashNumberText) els.bkashNumberText.textContent = BKASH_PAYMENT_NUMBER;
@@ -526,6 +582,9 @@ function closeMoreMenu() {
 
 function initMoreMenu() {
   els.moreMenuBtn?.setAttribute("aria-expanded", "false");
+  if (els.moreMenuPanel && els.moreMenuPanel.parentElement !== document.body) {
+    document.body.appendChild(els.moreMenuPanel);
+  }
 
   on(els.moreMenuBtn, "click", (e) => {
     e.stopPropagation();
@@ -607,6 +666,30 @@ function getRequestedSlots() {
   return clamped;
 }
 
+function getPaymentDetails(paymentMethod, totalFee) {
+  const method = String(paymentMethod || "On-spot");
+  const total = Math.max(Number(totalFee || 0), 0);
+  const isOnSpot = method.toLowerCase() === "on-spot";
+  return {
+    method,
+    status: isOnSpot ? "Due" : "Paid",
+    dueAmount: isOnSpot ? total : 0,
+    paidAmount: isOnSpot ? 0 : total,
+    methodLabel: isOnSpot ? "On-spot" : "bKash"
+  };
+}
+function getStoredPaymentDetails(item = {}) {
+  const total = Math.max(Number(item.totalFee || 0), 0);
+  const base = getPaymentDetails(item.paymentMethod || "On-spot", total);
+  const hasDue = Number.isFinite(Number(item.dueAmount));
+  const hasPaid = Number.isFinite(Number(item.paidAmount));
+  return {
+    ...base,
+    totalFee: total,
+    dueAmount: hasDue ? Math.max(Number(item.dueAmount), 0) : base.dueAmount,
+    paidAmount: hasPaid ? Math.max(Number(item.paidAmount), 0) : base.paidAmount
+  };
+}
 function getBookerDisplayName() {
   const profile = state.userProfile || {};
   return String(
@@ -619,7 +702,8 @@ function renderExtraPlayerFields() {
 
   const qty = getRequestedSlots();
   const requiredOthers = Math.max(qty - 1, 0);
-  const previousValues = Array.from(els.extraPlayersList.querySelectorAll("input"))
+  const existingInputs = Array.from(els.extraPlayersList.querySelectorAll(".extra-player-input"));
+  const previousValues = existingInputs
     .map((input) => String(input.value || "").trim());
 
   els.extraNamesWrap.classList.toggle("hidden", requiredOthers <= 0);
@@ -630,6 +714,10 @@ function renderExtraPlayerFields() {
 
   if (els.bookerPrimaryName) {
     els.bookerPrimaryName.value = getBookerDisplayName();
+  }
+
+  if (existingInputs.length === requiredOthers) {
+    return;
   }
 
   const fields = Array.from({ length: requiredOthers }, (_, index) => {
@@ -676,11 +764,16 @@ function refreshBookingPreview() {
   const fee = Number(state.featuredMatch?.slotFee || 0);
   const total = fee * qty;
   const feeText = Number.isFinite(fee) ? `BDT ${total}` : "Set by admin";
+  const paymentMethod = String(els.heroPaymentSelect?.value || "On-spot");
+  const pay = getPaymentDetails(paymentMethod, total);
   const othersRequired = Math.max(qty - 1, 0);
   const namesText = othersRequired > 0
     ? ` | Add ${othersRequired} additional player name${othersRequired > 1 ? "s" : ""}`
     : "";
-  els.heroFeePreview.textContent = `${qty} slot${qty > 1 ? "s" : ""} selected | Total: ${feeText}${namesText}`;
+  els.heroFeePreview.textContent = `${qty} slot${qty > 1 ? "s" : ""} selected | Total: ${feeText}${namesText} | Status: ${pay.status}`;
+  if (els.heroPaymentNotice) {
+    els.heroPaymentNotice.textContent = `Pay now: BDT ${pay.paidAmount} | Due: BDT ${pay.dueAmount} | Amount may change if slots/payment method change.`;
+  }
 }
 
 function getCompetitionMeta(leagueName = "", leagueId = "", category = "") {
@@ -709,7 +802,7 @@ async function resolveCompetitions() {
   }
 
   try {
-    const res = await fetch("https://www.thesportsdb.com/api/v1/json/3/all_leagues.php");
+    const res = await fetch("https://www.thesportsdb.com/api/v1/json/123/all_leagues.php");
     const data = await res.json();
     const leagues = Array.isArray(data?.leagues) ? data.leagues : [];
 
@@ -738,7 +831,7 @@ async function preloadLeagueLogos(competitions = []) {
   const pending = competitions.filter((l) => l?.id && !LEAGUE_LOGO_CACHE.has(String(l.id)));
   await Promise.all(pending.map(async (league) => {
     try {
-      const res = await fetch(`https://www.thesportsdb.com/api/v1/json/3/lookupleague.php?id=${league.id}`);
+      const res = await fetch(`https://www.thesportsdb.com/api/v1/json/123/lookupleague.php?id=${league.id}`);
       const data = await res.json();
       const item = Array.isArray(data?.leagues) ? data.leagues[0] : null;
       const logo = item?.strBadge || item?.strLogo || item?.strFanart1 || "";
@@ -756,7 +849,7 @@ async function preloadTeamBadges(fixtures = []) {
 
   await Promise.all(Array.from(teamIds).slice(0, 100).map(async (id) => {
     try {
-      const res = await fetch(`https://www.thesportsdb.com/api/v1/json/3/lookupteam.php?id=${id}`);
+      const res = await fetch(`https://www.thesportsdb.com/api/v1/json/123/lookupteam.php?id=${id}`);
       const data = await res.json();
       const team = Array.isArray(data?.teams) ? data.teams[0] : null;
       if (team?.strBadge) TEAM_BADGE_CACHE.set(String(id), team.strBadge);
@@ -766,14 +859,14 @@ async function preloadTeamBadges(fixtures = []) {
 
 async function fetchBangladeshTeamFixtures() {
   try {
-    const teamsRes = await fetch("https://www.thesportsdb.com/api/v1/json/3/searchteams.php?t=Bangladesh");
+    const teamsRes = await fetch("https://www.thesportsdb.com/api/v1/json/123/searchteams.php?t=Bangladesh");
     const teamsData = await teamsRes.json();
     const teams = (Array.isArray(teamsData?.teams) ? teamsData.teams : []).slice(0, 6);
 
     const all = await Promise.all(teams.map(async (team) => {
       if (!team?.idTeam) return [];
       try {
-        const evRes = await fetch(`https://www.thesportsdb.com/api/v1/json/3/eventsnext.php?id=${team.idTeam}`);
+        const evRes = await fetch(`https://www.thesportsdb.com/api/v1/json/123/eventsnext.php?id=${team.idTeam}`);
         const evData = await evRes.json();
         const events = Array.isArray(evData?.events) ? evData.events : [];
         return events.map((ev) => ({
@@ -827,13 +920,17 @@ function buildReceiptImage(data) {
 
   ctx.font = "500 32px Plus Jakarta Sans, Arial";
   const paymentText = data.last3 ? `${data.payment} (${data.last3})` : data.payment;
+  const dueAmount = Math.max(Number(data.dueAmount || 0), 0);
+  const paidAmount = Math.max(Number(data.paidAmount || 0), 0);
   const rows = [
     `Venue: ${data.venue}`,
     `Date: ${data.when}`,
     `Slots: ${data.slots}`,
     `Per slot: BDT ${data.unitFee}`,
     `Total fee: BDT ${data.totalFee}`,
-    `Payment: ${paymentText}`
+    `Payment: ${paymentText}`,
+    `Paid: BDT ${paidAmount}`,
+    `Due: BDT ${dueAmount}`
   ];
   rows.forEach((row, idx) => ctx.fillText(row, 96, 220 + (idx * 72)));
 
@@ -875,83 +972,187 @@ function downloadReceipt() {
   a.download = `matchday-receipt-${Date.now()}.jpg`;
   a.click();
 }
+function normalizeFixtureStatus(item = {}) {
+  const status = String(item.status || "").toLowerCase();
+  const code = String(item.statusCode || "").toLowerCase();
+
+  if (
+    status.includes("live") || status.includes("in play") || status.includes("1st") || status.includes("2nd") || status.includes("ht") ||
+    code.includes("live") || code.includes("inplay")
+  ) return "live";
+
+  if (
+    status.includes("ft") || status.includes("finished") || status.includes("after") || status.includes("aet") || status.includes("pen") ||
+    code.includes("finished") || code === "ft"
+  ) return "results";
+
+  const stamp = Number(item.stamp || Number.MAX_SAFE_INTEGER);
+  const now = Date.now();
+  if (stamp < now - (2 * 60 * 60 * 1000)) return "results";
+  if (Math.abs(stamp - now) <= (2 * 60 * 60 * 1000)) return "live";
+  return "upcoming";
+}
+
+function renderFixtureTabs() {
+  const map = { live: els.fixtureTabLive, upcoming: els.fixtureTabUpcoming, results: els.fixtureTabResults, all: els.fixtureTabAll };
+  Object.entries(map).forEach(([mode, btn]) => {
+    if (!btn) return;
+    btn.classList.toggle("active", state.fixtureMode === mode);
+  });
+}
+
+function filterFixturesByMode(fixtures = []) {
+  if (state.fixtureMode === "all") return fixtures;
+  return fixtures.filter((item) => normalizeFixtureStatus(item) === state.fixtureMode);
+}
+
+function setFixtureMode(mode) {
+  const allowed = new Set(["live", "upcoming", "results", "all"]);
+  state.fixtureMode = allowed.has(mode) ? mode : "live";
+  renderFixtureTabs();
+  renderFixtures(state.fixturesData || []);
+}
+
+function initFixtureTabs() {
+  on(els.fixtureTabLive, "click", () => setFixtureMode("live"));
+  on(els.fixtureTabUpcoming, "click", () => setFixtureMode("upcoming"));
+  on(els.fixtureTabResults, "click", () => setFixtureMode("results"));
+  on(els.fixtureTabAll, "click", () => setFixtureMode("all"));
+}
 function renderFixtures(fixtures = []) {
   if (!els.fixturesList) return;
+  state.fixturesData = Array.isArray(fixtures) ? fixtures : [];
+  renderFixtureTabs();
 
-  if (!fixtures.length) {
-    els.fixturesList.innerHTML = `<div class="empty-box">No major upcoming fixtures found right now.</div>`;
+  const scoped = filterFixturesByMode(state.fixturesData);
+  if (!scoped.length) {
+    const label = state.fixtureMode === "all" ? "matches" : state.fixtureMode;
+    els.fixturesList.innerHTML = `<div class="empty-box">No ${label} matches available right now.</div>`;
     return;
   }
 
-  const byCategory = fixtures.reduce((acc, item) => {
-    const key = item.category || "Top Fixtures";
+  const groupedByLeague = scoped.reduce((acc, item) => {
+    const key = `${item.leagueId || "x"}::${item.league || "Competition"}`;
     if (!acc[key]) acc[key] = [];
     acc[key].push(item);
     return acc;
   }, {});
 
-  const categoryHtml = Object.entries(byCategory).map(([category, categoryItems]) => {
-    const grouped = categoryItems.reduce((acc, item) => {
-      const key = `${item.leagueId || "x"}::${item.league || "Competition"}`;
-      if (!acc[key]) acc[key] = [];
-      acc[key].push(item);
-      return acc;
-    }, {});
+  const html = Object.values(groupedByLeague).map((list) => {
+    const first = list[0] || {};
+    if (first.leagueLogo && first.leagueId) LEAGUE_LOGO_CACHE.set(String(first.leagueId), first.leagueLogo);
+    const meta = getCompetitionMeta(first.league, first.leagueId, first.category);
 
-    const groupsHtml = Object.values(grouped).map((list) => {
-      const first = list[0] || {};
-      const meta = getCompetitionMeta(first.league, first.leagueId, first.category);
-      const matchesHtml = list.map((item) => {
-        const homeBadge = escapeHtml(item.homeBadge || `https://placehold.co/56x56/0b2d26/e8fff3?text=${encodeURIComponent((item.home || "H").slice(0,2).toUpperCase())}`);
-        const awayBadge = escapeHtml(item.awayBadge || `https://placehold.co/56x56/0b2d26/e8fff3?text=${encodeURIComponent((item.away || "A").slice(0,2).toUpperCase())}`);
-        return `
-          <article class="fixture-match">
-            <div class="fixture-teams">
-              <div class="fixture-team"><img src="${homeBadge}" alt="${escapeHtml(item.home)}" /><span>${escapeHtml(item.home)}</span></div>
-              <div class="fixture-vs">vs</div>
-              <div class="fixture-team"><img src="${awayBadge}" alt="${escapeHtml(item.away)}" /><span>${escapeHtml(item.away)}</span></div>
-            </div>
-            <div class="fixture-meta-line">${escapeHtml(item.kickoff)}</div>
-            <details class="fixture-details">
-              <summary>Match details</summary>
-              <div class="fixture-detail-grid">
-                <div><span class="muted">Season</span><strong>${escapeHtml(item.season || "-")}</strong></div>
-                <div><span class="muted">Round</span><strong>${escapeHtml(item.round || "-")}</strong></div>
-                <div><span class="muted">Venue</span><strong>${escapeHtml(item.venue || "TBA")}</strong></div>
-                <div><span class="muted">Status</span><strong>${escapeHtml(item.status || "Scheduled")}</strong></div>
-              </div>
-            </details>
-          </article>
-        `;
-      }).join("");
+    const rows = list.map((item) => {
+      const kind = normalizeFixtureStatus(item);
+      const score = (Number.isFinite(Number(item.homeScore)) && Number.isFinite(Number(item.awayScore)))
+        ? `${item.homeScore} - ${item.awayScore}`
+        : (kind === "live" ? "LIVE" : "vs");
+      const note = kind === "results" ? (item.status || "FT") : (item.kickoff || "TBD");
+      const detail = [item.venue, item.round || item.season, item.status].filter(Boolean).join(" | ");
+      const noteText = detail ? `${note} | ${detail}` : note;
+      const homeBadge = escapeHtml(item.homeBadge || `https://placehold.co/56x56/0b2d26/e8fff3?text=${encodeURIComponent((item.home || "H").slice(0,2).toUpperCase())}`);
+      const awayBadge = escapeHtml(item.awayBadge || `https://placehold.co/56x56/0b2d26/e8fff3?text=${encodeURIComponent((item.away || "A").slice(0,2).toUpperCase())}`);
 
       return `
-        <section class="fixture-group">
-          <div class="fixture-group-head">
-            <img class="fixture-league-logo" src="${escapeHtml(meta.logo)}" alt="${escapeHtml(meta.name)} logo" />
-            <h4>${escapeHtml(meta.name)}</h4>
+        <article class="sofa-row ${kind}">
+          <div class="sofa-team">
+            <img src="${homeBadge}" alt="${escapeHtml(item.home)}" />
+            <span>${escapeHtml(item.home)}</span>
           </div>
-          <div class="fixture-group-list">${matchesHtml}</div>
-        </section>
+          <div class="sofa-score-wrap">
+            <div class="sofa-score">${escapeHtml(String(score))}</div>
+            <div class="sofa-note">${escapeHtml(noteText)}</div>
+          </div>
+          <div class="sofa-team align-right">
+            <span>${escapeHtml(item.away)}</span>
+            <img src="${awayBadge}" alt="${escapeHtml(item.away)}" />
+          </div>
+          <div class="fixture-actions-row">
+            <button class="secondary-btn fixture-lineup-btn" type="button" data-fixtureid="${escapeHtml(String(item.id || ""))}">View lineups</button>
+            <div class="fixture-lineup-box hidden" id="lineup-${escapeHtml(String(item.id || ""))}"></div>
+          </div>
+        </article>
       `;
     }).join("");
 
     return `
-      <section class="fixture-category">
-        <h3 class="fixture-category-title">${escapeHtml(category)}</h3>
-        ${groupsHtml}
+      <section class="fixture-group sofa-league-group">
+        <div class="fixture-group-head">
+          <img class="fixture-league-logo" src="${escapeHtml(meta.logo)}" alt="${escapeHtml(meta.name)} logo" />
+          <h4>${escapeHtml(meta.name)}</h4>
+        </div>
+        <div class="sofa-list">${rows}</div>
       </section>
     `;
   }).join("");
 
-  els.fixturesList.innerHTML = categoryHtml;
+  els.fixturesList.innerHTML = html;
+  els.fixturesList.querySelectorAll(".fixture-lineup-btn").forEach((btn) => {
+    btn.addEventListener("click", () => loadFixtureLineup(String(btn.dataset.fixtureid || ""), btn));
+  });
+  animateListEntrance(els.fixturesList, ".sofa-row");
 }
-function renderHighlights(items = []) {
+async function loadFixtureLineup(fixtureId, triggerBtn) {
+  if (!fixtureId) return;
+
+  const box = document.getElementById(`lineup-${fixtureId}`);
+  if (!box) return;
+
+  if (!box.classList.contains("hidden")) {
+    box.classList.add("hidden");
+    if (triggerBtn) triggerBtn.textContent = "View lineups";
+    return;
+  }
+
+  box.classList.remove("hidden");
+  box.innerHTML = `<div class="muted">Loading lineups...</div>`;
+  if (triggerBtn) triggerBtn.textContent = "Hide lineups";
+
+  try {
+    let lineup = LINEUP_CACHE.get(fixtureId);
+    if (!lineup) {
+      const resp = await fetch(`${SPORTMONKS_PROXY_URL}?type=lineups&fixtureId=${encodeURIComponent(fixtureId)}`);
+      const data = await resp.json();
+      lineup = data?.lineup || null;
+      if (lineup) LINEUP_CACHE.set(fixtureId, lineup);
+    }
+
+    const renderSide = (teamName, rows) => {
+      const list = Array.isArray(rows) ? rows : [];
+      if (!list.length) return `<div class="muted">${escapeHtml(teamName || "Team")} lineup not available yet.</div>`;
+      return `
+        <strong>${escapeHtml(teamName || "Team")}</strong>
+        <ol class="lineup-list">
+          ${list.map((p) => `<li>${escapeHtml([p.number, p.name].filter(Boolean).join(". "))}</li>`).join("")}
+        </ol>
+      `;
+    };
+
+    box.innerHTML = `
+      <div class="lineup-grid">
+        <div>${renderSide(lineup?.homeTeam, lineup?.home)}</div>
+        <div>${renderSide(lineup?.awayTeam, lineup?.away)}</div>
+      </div>
+    `;
+  } catch (err) {
+    console.error(err);
+    box.innerHTML = `<div class="muted">Could not load lineup now.</div>`;
+  }
+}
+function renderHighlights(items = [], query = "") {
   if (!els.highlightsList) return;
 
   if (!items.length) {
-    els.highlightsList.innerHTML = `<div class="empty-box">No fresh highlight videos right now.</div>`;
+    const q = query ? ` for "${escapeHtml(query)}"` : "";
+    els.highlightsList.innerHTML = `<div class="empty-box">No highlight videos found${q}.</div>`;
+    if (els.highlightsMeta) els.highlightsMeta.textContent = "";
     return;
+  }
+
+  if (els.highlightsMeta) {
+    const q = query ? ` for "${query}"` : "";
+    els.highlightsMeta.textContent = `${items.length} videos loaded${q}.`;
   }
 
   els.highlightsList.innerHTML = items.map((item) => `
@@ -965,103 +1166,133 @@ function renderHighlights(items = []) {
       </div>
     </article>
   `).join("");
+  animateListEntrance(els.highlightsList, ".video-card");
 }
 
-async function loadDailyFixtures() {
+function buildHighlightFallbacks(queryText = "") {
+  const rawQuery = String(queryText || "").trim();
+  const topics = rawQuery
+    ? [rawQuery]
+    : [
+      "premier league highlights",
+      "uefa champions league highlights",
+      "la liga highlights",
+      "serie a highlights",
+      "bundesliga highlights",
+      "copa america highlights"
+    ];
+
+  return topics.map((topic) => ({
+    title: `Search highlights: ${topic}`,
+    competition: "YouTube search",
+    thumbnail: `https://placehold.co/960x540/06161b/e8fff3?text=${encodeURIComponent(topic)}`,
+    url: `https://www.youtube.com/results?search_query=${encodeURIComponent(topic)}`
+  }));
+}
+async function loadDailyFixtures(options = {}) {
   if (!els.fixturesList) return;
 
-  els.fixturesDate.textContent = `Updated: ${new Date().toLocaleString()}`;
-  els.fixturesList.innerHTML = `<div class="empty-box">Loading important upcoming fixtures...</div>`;
+  const { silent = false } = options || {};
+  const now = new Date();
+  const isoDate = now.toISOString().slice(0, 10);
+  if (els.fixturesDate) {
+    const lastSuccess = state.fixturesLastLoadedAt ? ` | Last success: ${new Date(state.fixturesLastLoadedAt).toLocaleTimeString()}` : "";
+    els.fixturesDate.textContent = `Updated: ${now.toLocaleString()}${lastSuccess} | Auto refresh: 45s`;
+  }
+  if (!silent) {
+    els.fixturesList.innerHTML = `<div class="skeleton-grid"><div class="skeleton-card"></div><div class="skeleton-card"></div><div class="skeleton-card"></div></div>`;
+  }
 
   try {
-    const competitions = await resolveCompetitions();
-    await preloadLeagueLogos(competitions);
+    const resp = await fetch(`${SPORTMONKS_PROXY_URL}?type=fixtures&date=${encodeURIComponent(isoDate)}`);
+    const payload = await resp.json();
 
-    const responses = await Promise.all(competitions.map(async (competition) => {
-      try {
-        const res = await fetch(`https://www.thesportsdb.com/api/v1/json/3/eventsnextleague.php?id=${competition.id}`);
-        const data = await res.json();
-        const events = Array.isArray(data?.events) ? data.events : [];
-        return events.map((ev) => ({
-          leagueId: competition.id,
-          category: competition.category,
-          league: ev.strLeague || competition.name,
-          season: ev.strSeason || "",
-          round: ev.intRound || ev.strRound || "",
-          home: ev.strHomeTeam || "Home",
-          away: ev.strAwayTeam || "Away",
-          homeTeamId: ev.idHomeTeam || "",
-          awayTeamId: ev.idAwayTeam || "",
-          homeBadge: ev.strHomeTeamBadge || "",
-          awayBadge: ev.strAwayTeamBadge || "",
-          venue: ev.strVenue || "",
-          status: ev.strStatus || "Scheduled",
-          date: ev.dateEvent || "",
-          time: ev.strTime || "",
-          kickoff: formatKickoff(ev.dateEvent, ev.strTime),
-          stamp: Date.parse(`${ev.dateEvent || "1970-01-01"}T${ev.strTime || "00:00:00"}Z`) || Number.MAX_SAFE_INTEGER
-        }));
-      } catch {
-        return [];
-      }
-    }));
+    if (!resp.ok || !payload?.ok) {
+      throw new Error(payload?.error || "Sportmonks proxy error");
+    }
 
-    const bangladeshFixtures = await fetchBangladeshTeamFixtures();
-
-    const merged = responses.flat()
-      .concat(bangladeshFixtures)
-      .filter((item) => {
-        if (!isInternationalCompetition(item.league || "")) return true;
-        return isTopCountryMatch(item.home, item.away);
-      })
-      .sort((a, b) => (leaguePriority(a.league) - leaguePriority(b.league)) || (a.stamp - b.stamp))
-      .slice(0, 72);
-
-    await preloadTeamBadges(merged);
-    const withBadges = merged.map((item) => ({
+    const mapped = (Array.isArray(payload.fixtures) ? payload.fixtures : []).map((item) => ({
       ...item,
-      homeBadge: item.homeBadge || TEAM_BADGE_CACHE.get(String(item.homeTeamId)) || "",
-      awayBadge: item.awayBadge || TEAM_BADGE_CACHE.get(String(item.awayTeamId)) || ""
+      category: "Global Football",
+      kickoff: formatKickoff(item.date, item.time)
     }));
 
-    renderFixtures(withBadges);
+    mapped.forEach((item) => {
+      if (item.leagueId && item.leagueLogo) LEAGUE_LOGO_CACHE.set(String(item.leagueId), item.leagueLogo);
+      if (item.homeTeamId && item.homeBadge) TEAM_BADGE_CACHE.set(String(item.homeTeamId), item.homeBadge);
+      if (item.awayTeamId && item.awayBadge) TEAM_BADGE_CACHE.set(String(item.awayTeamId), item.awayBadge);
+    });
+
+    state.fixturesLastLoadedAt = Date.now();
+    renderFixtures(mapped);
   } catch (err) {
     console.error(err);
-    els.fixturesList.innerHTML = `<div class="empty-box">Could not load fixtures right now.</div>`;
+    const message = String(err?.message || "").includes("SPORTMONKS_API_TOKEN")
+      ? "Sportmonks token missing in Vercel env. Add SPORTMONKS_API_TOKEN."
+      : "Could not load fixtures right now.";
+    els.fixturesList.innerHTML = `<div class="empty-box">${escapeHtml(message)}</div>`;
   }
 }
-async function loadHighlights() {
+async function loadHighlights(queryText = "") {
   if (!els.highlightsList) return;
 
-  els.highlightsList.innerHTML = `<div class="empty-box">Loading highlight videos...</div>`;
+  const query = String(queryText || "").trim().toLowerCase();
+  els.highlightsList.innerHTML = `<div class="skeleton-grid"><div class="skeleton-card"></div><div class="skeleton-card"></div><div class="skeleton-card"></div></div>`;
 
   try {
     const response = await fetch("https://www.scorebat.com/video-api/v3/");
     const payload = await response.json();
     const raw = Array.isArray(payload?.response) ? payload.response : [];
 
-    const items = raw
-      .filter((item) => isPopularCompetition(item.competition || ""))
-      .map((item) => {
-        const firstVideo = Array.isArray(item.videos) ? item.videos[0] : null;
-        const url = extractEmbedSrc(firstVideo?.embed || "") || item.matchviewUrl || item.url || "#";
-        return {
-          title: item.title || "Match highlight",
-          competition: item.competition || "Top Competition",
-          thumbnail: item.thumbnail || "https://images.unsplash.com/photo-1574629810360-7efbbe195018?auto=format&fit=crop&w=900&q=80",
-          url
-        };
-      })
-      .filter((item) => item.url && item.url !== "#")
-      .slice(0, 6);
+    const items = raw.map((item) => {
+      const firstVideo = Array.isArray(item.videos) ? item.videos[0] : null;
+      const url = extractEmbedSrc(firstVideo?.embed || "") || item.matchviewUrl || item.url || "#";
+      return {
+        title: item.title || "Match highlight",
+        competition: item.competition || "Football",
+        thumbnail: item.thumbnail || "https://images.unsplash.com/photo-1574629810360-7efbbe195018?auto=format&fit=crop&w=900&q=80",
+        url
+      };
+    }).filter((item) => item.url && item.url !== "#");
 
-    renderHighlights(items);
+    state.highlightsData = items;
+
+    let filtered = items;
+    if (query) {
+      filtered = items.filter((item) => {
+        const hay = `${item.title} ${item.competition}`.toLowerCase();
+        return hay.includes(query);
+      });
+    }
+
+    const deduped = [];
+    const seen = new Set();
+    filtered.forEach((item) => {
+      const key = `${item.title}::${item.url}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      deduped.push(item);
+    });
+
+    const maxItems = query ? 40 : 30;
+    const shortlist = deduped.slice(0, maxItems);
+    if (!shortlist.length) {
+      renderHighlights(buildHighlightFallbacks(queryText), queryText);
+      if (els.highlightsMeta) els.highlightsMeta.textContent = "Showing YouTube search shortcuts.";
+      return;
+    }
+
+    renderHighlights(shortlist, queryText);
   } catch (err) {
     console.error(err);
-    els.highlightsList.innerHTML = `<div class="empty-box">Could not load videos right now.</div>`;
+    renderHighlights(buildHighlightFallbacks(queryText), queryText);
+    if (els.highlightsMeta) els.highlightsMeta.textContent = "Video API unavailable. Showing YouTube search shortcuts.";
   }
 }
-
+function runHighlightsSearch() {
+  const query = String(els.highlightsSearchInput?.value || "").trim();
+  loadHighlights(query);
+}
 function renderMapSearchResults(results = []) {
   if (!els.mapSearchResults) return;
 
@@ -1137,6 +1368,10 @@ async function searchMapLocation() {
   }
 }
 function openBkashModal() {
+  const qty = getRequestedSlots();
+  const fee = Number(state.featuredMatch?.slotFee || 0);
+  const total = Math.max(Number(fee * qty), 0);
+  if (els.bkashPayableText) els.bkashPayableText.textContent = `Payable now: BDT ${total} (amount may change if slots update)`;
   els.bkashModal?.classList.remove("hidden");
 }
 
@@ -1192,28 +1427,173 @@ function renderActivityAction(action) {
   if (action === "booked") return "Booked";
   if (action === "cancelled") return "Cancelled";
   if (action === "removed_by_admin") return "Removed by admin";
+  if (action === "login") return "Login";
   return action || "Updated";
+}
+
+function renderAdminActivitySummary(items = []) {
+  if (!els.adminActivitySummary) return;
+
+  const now = Date.now();
+  const startOfDay = new Date();
+  startOfDay.setHours(0, 0, 0, 0);
+  const startMs = startOfDay.getTime();
+
+  const todayItems = items.filter((item) => {
+    const ts = item.createdAt?.toDate?.()?.getTime?.() || 0;
+    return ts >= startMs && ts <= now;
+  });
+
+  const totals = {
+    logins: todayItems.filter((i) => i.action === "login").length,
+    bookings: todayItems.filter((i) => i.action === "booked").length,
+    cancels: todayItems.filter((i) => i.action === "cancelled").length,
+    slots: todayItems.reduce((sum, i) => sum + Math.max(Number(i.slotsAdded || 0), 0), 0)
+  };
+
+  const paymentBreakdown = todayItems.reduce((acc, i) => {
+    if (i.action !== "booked") return acc;
+    const pay = getStoredPaymentDetails(i);
+    const key = `${pay.methodLabel} (${pay.status})`;
+    if (!acc[key]) acc[key] = { count: 0, total: 0, paid: 0, due: 0 };
+    acc[key].count += 1;
+    acc[key].total += pay.totalFee;
+    acc[key].paid += pay.paidAmount;
+    acc[key].due += pay.dueAmount;
+    return acc;
+  }, {});
+
+  const paymentText = Object.keys(paymentBreakdown).length
+    ? Object.entries(paymentBreakdown).map(([k, v]) => `${k}: ${v.count} booking(s), Total BDT ${v.total}, Paid BDT ${v.paid}, Due BDT ${v.due}`).join(" | ")
+    : "No payment data today";
+
+  els.adminActivitySummary.innerHTML = `
+    <article class="analytics-card"><div class="panel-label">Today logins</div><strong>${totals.logins}</strong></article>
+    <article class="analytics-card"><div class="panel-label">Today bookings</div><strong>${totals.bookings}</strong></article>
+    <article class="analytics-card"><div class="panel-label">Today cancellations</div><strong>${totals.cancels}</strong></article>
+    <article class="analytics-card"><div class="panel-label">Slots booked today</div><strong>${totals.slots}</strong></article>
+    <article class="analytics-card full"><div class="panel-label">Payment mix (today)</div><strong>${escapeHtml(paymentText)}</strong></article>
+  `;
+}
+
+function renderAdminUserStats(items = []) {
+  if (!els.adminActivityUsers) return;
+
+  const byUser = new Map();
+  items.forEach((item) => {
+    const userId = item.targetUserId || item.actorUserId || "unknown";
+    const key = `${userId}`;
+    const row = byUser.get(key) || {
+      userId: key,
+      name: item.targetName || item.actorName || "User",
+      email: item.targetEmail || item.actorEmail || "",
+      logins: 0,
+      bookings: 0,
+      cancels: 0,
+      slots: 0,
+      bkash: 0,
+      onSpot: 0,
+      totalAmount: 0,
+      paidAmount: 0,
+      dueAmount: 0
+    };
+
+    if (item.action === "login") row.logins += 1;
+    if (item.action === "booked") {
+      row.bookings += 1;
+      row.slots += Math.max(Number(item.slotsAdded || 0), 0);
+      if ((item.paymentMethod || "").toLowerCase() === "bkash") row.bkash += 1;
+      else row.onSpot += 1;
+      const pay = getStoredPaymentDetails(item);
+      row.totalAmount += pay.totalFee;
+      row.paidAmount += pay.paidAmount;
+      row.dueAmount += pay.dueAmount;
+    }
+    if (item.action === "cancelled") row.cancels += 1;
+
+    byUser.set(key, row);
+  });
+
+  const rows = Array.from(byUser.values())
+    .sort((a, b) => (b.bookings - a.bookings) || (b.slots - a.slots))
+    .slice(0, 50);
+
+  if (!rows.length) {
+    els.adminActivityUsers.innerHTML = `<div class="empty-box">No user activity yet.</div>`;
+    return;
+  }
+
+  els.adminActivityUsers.innerHTML = `
+    <div class="stats-table-wrap">
+      <table class="stats-table">
+        <thead>
+          <tr><th>User</th><th>Logins</th><th>Bookings</th><th>Cancels</th><th>Slots</th><th>bKash</th><th>On-spot</th><th>Total (BDT)</th><th>Paid (BDT)</th><th>Due (BDT)</th></tr>
+        </thead>
+        <tbody>
+          ${rows.map((r) => `
+            <tr>
+              <td><strong>${escapeHtml(r.name)}</strong><div class="muted">${escapeHtml(r.email)}</div></td>
+              <td>${r.logins}</td>
+              <td>${r.bookings}</td>
+              <td>${r.cancels}</td>
+              <td>${r.slots}</td>
+              <td>${r.bkash}</td>
+              <td>${r.onSpot}</td>
+              <td>${r.totalAmount}</td>
+              <td>${r.paidAmount}</td>
+              <td>${r.dueAmount}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function ensureLoginActivityLogged(user) {
+  if (!user) return;
+  try {
+    const key = `matchday-login-logged-${user.uid}`;
+    if (sessionStorage.getItem(key) === "1") return;
+    sessionStorage.setItem(key, "1");
+    logActivity("login", { id: "", location: "Auth", label: "Login" }, {
+      targetUserId: user.uid,
+      targetName: state.userProfile?.name || user.displayName || "",
+      targetEmail: user.email || ""
+    });
+  } catch {
+    // ignore sessionStorage failures
+  }
 }
 
 function listenAdminActivity() {
   state.activityUnsub?.();
   state.activityUnsub = onSnapshot(
-    query(collection(db, "activityLogs"), orderBy("createdAt", "desc"), limit(100)),
+    query(collection(db, "activityLogs"), orderBy("createdAt", "desc"), limit(300)),
     (snap) => {
       if (!els.adminActivityList) return;
 
       if (snap.empty) {
+        if (els.adminActivitySummary) els.adminActivitySummary.innerHTML = `<div class="empty-box">No summary yet.</div>`;
+        if (els.adminActivityUsers) els.adminActivityUsers.innerHTML = `<div class="empty-box">No user activity yet.</div>`;
         els.adminActivityList.innerHTML = `<div class="empty-box">No slot activity yet.</div>`;
         return;
       }
 
-      els.adminActivityList.innerHTML = snap.docs.map((d) => {
-        const item = d.data();
+      const entries = snap.docs.map((d) => d.data());
+      renderAdminActivitySummary(entries);
+      renderAdminUserStats(entries);
+
+      els.adminActivityList.innerHTML = entries.map((item) => {
         const when = item.createdAt?.toDate?.() ? item.createdAt.toDate().toLocaleString() : "";
         const actor = escapeHtml(item.actorName || item.actorEmail || "User");
         const target = escapeHtml(item.targetName || item.targetEmail || "");
-        const payment = escapeHtml(item.paymentMethod || "");
+        const paymentMethod = String(item.paymentMethod || "");
+        const pay = getStoredPaymentDetails(item);
+        const totalFee = pay.totalFee;
         const venue = escapeHtml(item.matchLocation || "Venue");
+        const slots = Math.max(Number(item.slotsAdded || 0), 0);
+        const totalSlots = Math.max(Number(item.totalSlotsForUser || 0), 0);
 
         return `
           <div class="announcement-card activity-card">
@@ -1224,7 +1604,8 @@ function listenAdminActivity() {
             <div class="muted">Match: ${venue}</div>
             <div class="muted">By: ${actor}</div>
             ${target ? `<div class="muted">Player: ${target}</div>` : ""}
-            ${payment ? `<div class="muted">Payment: ${payment}</div>` : ""}
+            ${slots ? `<div class="muted">Slots added: ${slots} | User total: ${totalSlots}</div>` : ""}
+            ${paymentMethod ? `<div class="muted">Payment: ${escapeHtml(pay.methodLabel)} | ${escapeHtml(pay.status)} | Total BDT ${totalFee} | Paid BDT ${pay.paidAmount} | Due BDT ${pay.dueAmount}</div>` : ""}
           </div>
         `;
       }).join("");
@@ -1295,6 +1676,7 @@ async function routeAfterLogin(user) {
   }
 
   els.logoutBtn.classList.remove("hidden");
+  ensureLoginActivityLogged(user);
 
   if (user.email === ADMIN_EMAIL) {
     els.profileBtn.classList.add("hidden");
@@ -1310,6 +1692,8 @@ async function routeAfterLogin(user) {
     els.heroDownloadBtn.classList.add("hidden");
     listenFeaturedMatches();
     listenAnnouncements(els.announcementList, false);
+    listenMyBookings(user.uid);
+    startFixturesAutoRefresh();
     loadDailyFixtures();
     loadHighlights();
   }
@@ -1470,24 +1854,56 @@ function renderPlayers(bookings) {
 
   const isAdmin = state.user?.email === ADMIN_EMAIL;
 
-  els.playersList.innerHTML = bookings.map((b) => {
-    const name = escapeHtml(b.name || b.email || "Player");
-    const payment = escapeHtml(b.paymentMethod || "N/A");
+  const expandedPlayers = [];
+  bookings.forEach((b) => {
+    const ownerName = String(b.name || b.email || "Player").trim();
     const slots = Math.max(Number(b.slots || 1), 1);
-    const unitFee = Number(state.featuredMatch?.slotFee || b.slotFee || 0);
-    const totalFee = Number(b.totalFee || (unitFee * slots));
-    const others = Array.isArray(b.extraPlayerNames) && b.extraPlayerNames.length ? ` | ${escapeHtml(b.extraPlayerNames.join(", "))}` : "";
-    const detailLine = isAdmin ? `<div>${payment} | ${slots} slot(s) | BDT ${totalFee}${others}</div>` : `<div>${slots} slot(s)${others}</div>`;
+    const extras = Array.isArray(b.extraPlayerNames) ? b.extraPlayerNames.map((n) => String(n || "").trim()).filter(Boolean) : [];
+    const names = [ownerName, ...extras].slice(0, slots);
+
+    while (names.length < slots) {
+      names.push(`Player ${names.length + 1}`);
+    }
+
+    names.forEach((n, idx) => {
+      expandedPlayers.push({
+        displayName: n,
+        ownerName,
+        userId: String(b.userId || ""),
+        isPrimary: idx === 0,
+        slots,
+        paymentMethod: String(b.paymentMethod || "N/A"),
+        totalFee: Number(b.totalFee || (Number(state.featuredMatch?.slotFee || b.slotFee || 0) * slots))
+      });
+    });
+  });
+
+  els.playersList.innerHTML = expandedPlayers.map((p, index) => {
+    const name = escapeHtml(p.displayName || "Player");
+    const owner = escapeHtml(p.ownerName || "Player");
+    const payment = escapeHtml(p.paymentMethod || "N/A");
+    const fee = Number.isFinite(Number(p.totalFee)) ? Number(p.totalFee) : 0;
+    const detailLine = p.isPrimary
+      ? (isAdmin
+        ? `<div>${payment} | ${p.slots} slot(s) | BDT ${fee}</div>`
+        : `<div>${p.slots} slot(s)</div>`)
+      : `<div>Booked by ${owner}</div>`;
+
     return `
       <div class="player-chip">
-        <div>
-          <strong>${name}</strong>
-          ${detailLine}
+        <div class="player-chip-main">
+          <span class="player-order">${index + 1}</span>
+          <div>
+            <strong>${name}</strong>
+            ${detailLine}
+          </div>
         </div>
-        ${isAdmin ? `<button class="kick-btn" data-userid="${b.userId}">Kick</button>` : ""}
+        ${isAdmin && p.isPrimary ? `<button class="kick-btn" data-userid="${p.userId}">Kick</button>` : ""}
       </div>
     `;
   }).join("");
+
+  animateListEntrance(els.playersList, ".player-chip");
 
   if (isAdmin) {
     els.playersList.querySelectorAll(".kick-btn").forEach((btn) => {
@@ -1498,6 +1914,104 @@ function renderPlayers(bookings) {
   }
 }
 
+function renderMyBookings(items = []) {
+  if (!els.myBookingsList || !els.myBookingsMeta) return;
+
+  els.myBookingsMeta.textContent = items.length ? `${items.length} entries` : "No history";
+  if (!items.length) {
+    els.myBookingsList.innerHTML = `<div class="empty-box">No previous bookings yet.</div>`;
+    return;
+  }
+
+  els.myBookingsList.innerHTML = items.map((item) => {
+    const when = formatMatchDate(item.date, item.time);
+    const venue = escapeHtml(item.location || item.venue || "Venue");
+    const status = escapeHtml(String(item.matchStatus || item.status || "booked").toUpperCase());
+    const slots = Math.max(Number(item.slots || 1), 1);
+    const totalFee = Number(item.totalFee || 0);
+    const pay = getPaymentDetails(item.paymentMethod || "On-spot", totalFee);
+    return `
+      <div class="announcement-card">
+        <strong>${venue}</strong>
+        <div class="muted">${escapeHtml(when)} | ${status}</div>
+        <div class="muted">${slots} slot(s) | ${escapeHtml(pay.methodLabel)} | ${escapeHtml(pay.status)} | Total BDT ${totalFee} | Paid BDT ${pay.paidAmount} | Due BDT ${pay.dueAmount}</div>
+      </div>
+    `;
+  }).join("");
+
+  animateListEntrance(els.myBookingsList, ".announcement-card");
+}
+async function fetchMyBookingsFallback(userId) {
+  const matchesSnap = await getDocs(query(collection(db, "matches"), orderBy("date", "desc"), limit(40)));
+  const rows = [];
+
+  for (const matchDoc of matchesSnap.docs) {
+    const match = matchDoc.data() || {};
+    const bookingSnap = await getDoc(doc(db, "matches", matchDoc.id, "bookings", userId));
+    if (!bookingSnap.exists()) continue;
+    rows.push({
+      id: `${matchDoc.id}-${userId}`,
+      ...bookingSnap.data(),
+      location: match.location || "Venue",
+      date: match.date || "",
+      time: match.time || "",
+      matchStatus: match.status || "open"
+    });
+  }
+
+  rows.sort((a, b) => {
+    const at = Date.parse(`${a.date || "1970-01-01"}T${a.time || "00:00:00"}`) || 0;
+    const bt = Date.parse(`${b.date || "1970-01-01"}T${b.time || "00:00:00"}`) || 0;
+    return bt - at;
+  });
+
+  return rows.slice(0, 20);
+}
+
+function listenMyBookings(userId) {
+  if (!userId || !els.myBookingsList) return;
+  state.myBookingsUnsub?.();
+
+  const q = query(
+    collectionGroup(db, "bookings"),
+    where("userId", "==", userId),
+    orderBy("updatedAt", "desc"),
+    limit(20)
+  );
+
+  state.myBookingsUnsub = onSnapshot(q, async (snap) => {
+    const items = await Promise.all(snap.docs.map(async (d) => {
+      const data = d.data();
+      const parts = d.ref.path.split("/");
+      const matchId = parts[1] || "";
+      let match = {};
+      try {
+        const matchSnap = await getDoc(doc(db, "matches", matchId));
+        match = matchSnap.exists() ? matchSnap.data() : {};
+      } catch {}
+
+      return {
+        id: d.id,
+        ...data,
+        location: match.location || "Venue",
+        date: match.date || "",
+        time: match.time || "",
+        matchStatus: match.status || "open"
+      };
+    }));
+
+    renderMyBookings(items);
+  }, async (err) => {
+    console.error(err);
+    try {
+      const fallback = await fetchMyBookingsFallback(userId);
+      renderMyBookings(fallback);
+    } catch (fallbackErr) {
+      console.error(fallbackErr);
+      if (els.myBookingsList) els.myBookingsList.innerHTML = `<div class="empty-box">Could not load booking history.</div>`;
+    }
+  });
+}
 function updateHero(match, bookings) {
   const total = Number(match.totalSlots || 0);
   const booked = getBookedSlots(bookings);
@@ -1558,6 +2072,7 @@ function updateHero(match, bookings) {
 }
 
 function listenBookingsForMatch(matchId) {
+  if (els.playersList) els.playersList.innerHTML = `<div class="empty-box loading-state">Loading players list...</div>`;
   state.bookingsUnsub?.();
   state.bookingsUnsub = onSnapshot(
     collection(db, "matches", matchId, "bookings"),
@@ -1738,6 +2253,9 @@ async function bookMatchDirect({ bkashConfirmed = false, bkashLast3 = "" } = {})
       email: user.email || "",
       name: p.name || user.displayName || user.email?.split("@")[0] || "Player",
       paymentMethod: selectedPayment,
+      paymentStatus: selectedPayment === "On-spot" ? "due" : "paid",
+      dueAmount: selectedPayment === "On-spot" ? totalFee : 0,
+      paidAmount: selectedPayment === "On-spot" ? 0 : totalFee,
       bkashLast3: selectedPayment === "bKash" ? String(bkashLast3 || existingData?.bkashLast3 || "") : "",
       slotFee: unitFee,
       slots: newSlots,
@@ -1752,6 +2270,9 @@ async function bookMatchDirect({ bkashConfirmed = false, bkashLast3 = "" } = {})
       targetName: p.name || user.displayName || "",
       targetEmail: user.email || "",
       paymentMethod: selectedPayment,
+      paymentStatus: selectedPayment === "On-spot" ? "due" : "paid",
+      dueAmount: selectedPayment === "On-spot" ? totalFee : 0,
+      paidAmount: selectedPayment === "On-spot" ? 0 : totalFee,
       slotFee: unitFee,
       slotsAdded: requestedSlots,
       totalSlotsForUser: newSlots,
@@ -1773,7 +2294,9 @@ async function bookMatchDirect({ bkashConfirmed = false, bkashLast3 = "" } = {})
       unitFee,
       totalFee,
       payment: selectedPayment,
-      last3: selectedPayment === "bKash" ? String(bkashLast3 || "") : ""
+      last3: selectedPayment === "bKash" ? String(bkashLast3 || "") : "",
+      paidAmount: selectedPayment === "On-spot" ? 0 : totalFee,
+      dueAmount: selectedPayment === "On-spot" ? totalFee : 0
     });
   } catch (err) {
     console.error(err);
@@ -2037,6 +2560,7 @@ on(els.closeProfileModal, "click", closeProfileModal);
 on(els.openMapPickerBtn, "click", openMapPicker);
 on(els.mapSearchBtn, "click", searchMapLocation);
 on(els.refreshFixturesBtn, "click", loadDailyFixtures);
+on(els.highlightsSearchBtn, "click", runHighlightsSearch);
 on(els.closeMapPickerModal, "click", closeMapPicker);
 on(els.confirmMapPickerBtn, "click", confirmMapPicker);
 on(els.closeBkashModal, "click", closeBkashModal);
@@ -2054,6 +2578,12 @@ on(els.downloadReceiptBtn, "click", downloadReceipt);
 on(els.adminMatchForm, "submit", createMatch);
 on(els.announcementForm, "submit", postAnnouncement);
 
+on(els.highlightsSearchInput, "keydown", (e) => {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    runHighlightsSearch();
+  }
+});
 on(els.mapSearchInput, "keydown", (e) => {
   if (e.key === "Enter") {
     e.preventDefault();
@@ -2067,9 +2597,17 @@ window.addEventListener("hashchange", () => {
   if (pageFromHash) setPlayerPage(pageFromHash, { updateHash: false });
 });
 
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) return;
+  if (els.playerView?.classList.contains("hidden")) return;
+  loadDailyFixtures({ silent: true });
+});
+});
+
 initStaticUi();
 initMotionUi();
 initMoreMenu();
+initFixtureTabs();
 authUiMode("login");
 refreshBookingPreview();
 
@@ -2088,6 +2626,96 @@ onAuthStateChanged(auth, async (user) => {
     setView(els.authView);
   }
 });
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
