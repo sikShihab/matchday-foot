@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
@@ -7,7 +7,7 @@
   <link rel="icon" type="image/svg+xml" href="assets/logo-placeholder.svg" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;700;800&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Manrope:wght@500;700;800&display=swap" rel="stylesheet" />
   <link rel="manifest" href="manifest.json" />
   <link rel="stylesheet" href="styles.css" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
@@ -38,31 +38,31 @@
         <button id="moreMenuBtn" class="ghost-btn" type="button" aria-label="Open quick menu">&#8942;</button>
         <div id="moreMenuPanel" class="more-menu-panel hidden">
           <button class="more-menu-item" data-target="liveScoreSection" type="button">
-            <span class="menu-item-icon" aria-hidden="true">HM</span>
+            <span class="menu-item-icon" aria-hidden="true">Home</span>
             <span class="menu-item-copy"><strong>Home</strong><small>Main dashboard and live booking status</small></span>
           </button>
           <button class="more-menu-item" data-target="fixturesSection" type="button">
-            <span class="menu-item-icon" aria-hidden="true">FX</span>
+            <span class="menu-item-icon" aria-hidden="true">Live</span>
             <span class="menu-item-copy"><strong>Live Soccer</strong><small>Live, upcoming, and results fixtures</small></span>
           </button>
           <button class="more-menu-item" data-target="highlightsSection" type="button">
-            <span class="menu-item-icon" aria-hidden="true">HL</span>
+            <span class="menu-item-icon" aria-hidden="true">Play</span>
             <span class="menu-item-copy"><strong>Highlights</strong><small>Top football clips and highlights</small></span>
           </button>
           <button class="more-menu-item" data-target="bookingsSection" type="button">
-            <span class="menu-item-icon" aria-hidden="true">BK</span>
+            <span class="menu-item-icon" aria-hidden="true">Book</span>
             <span class="menu-item-copy"><strong>Bookings</strong><small>Your current and previous reservations</small></span>
           </button>
           <button class="more-menu-item" data-target="profileSection" type="button">
-            <span class="menu-item-icon" aria-hidden="true">PR</span>
+            <span class="menu-item-icon" aria-hidden="true">Edit</span>
             <span class="menu-item-copy"><strong>Edit Profile</strong><small>Update your name, phone, and photo</small></span>
           </button>
           <button class="more-menu-item" data-target="aboutSection" type="button">
-            <span class="menu-item-icon" aria-hidden="true">AB</span>
+            <span class="menu-item-icon" aria-hidden="true">Info</span>
             <span class="menu-item-copy"><strong>About Us</strong><small>Club details and venue information</small></span>
           </button>
           <button class="more-menu-item" data-target="quickContactSection" type="button">
-            <span class="menu-item-icon" aria-hidden="true">CT</span>
+            <span class="menu-item-icon" aria-hidden="true">Help</span>
             <span class="menu-item-copy"><strong>Contact Us</strong><small>WhatsApp, email, and social links</small></span>
           </button>
         </div>
@@ -455,6 +455,16 @@
       </div>
     </div>
   </div>
+  <div id="fixtureDetailModal" class="modal hidden">
+    <div class="modal-card fixture-detail-modal-card">
+      <div class="modal-head">
+        <h3 id="fixtureDetailTitle">Match Center</h3>
+        <button id="closeFixtureDetailModal" class="ghost-btn" type="button">Close</button>
+      </div>
+      <div id="fixtureDetailMeta" class="muted"></div>
+      <div id="fixtureDetailBody" class="fixture-detail-body"></div>
+    </div>
+  </div>
   <div id="globalLoading" class="global-loading hidden">
     <div class="loading-orb"></div>
     <div id="globalLoadingText" class="loading-text">Loading...</div>
@@ -482,7 +492,7 @@
     }
   </script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <script type="module" src="app-main.js?v=20260310e"></script>
+  <script type="module" src="app-main.js?v=20260310i"></script>
 </body>
 </html>
 

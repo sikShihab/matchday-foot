@@ -199,6 +199,11 @@ const els = {
   closeReceiptModal: $("closeReceiptModal"),
   receiptBody: $("receiptBody"),
   downloadReceiptBtn: $("downloadReceiptBtn"),
+  fixtureDetailModal: $("fixtureDetailModal"),
+  closeFixtureDetailModal: $("closeFixtureDetailModal"),
+  fixtureDetailTitle: $("fixtureDetailTitle"),
+  fixtureDetailMeta: $("fixtureDetailMeta"),
+  fixtureDetailBody: $("fixtureDetailBody"),
   extraNamesWrap: $("extraNamesWrap"),
   bookerPrimaryName: $("bookerPrimaryName"),
   extraPlayersList: $("extraPlayersList"),
@@ -256,6 +261,7 @@ const INTERNATIONAL_KEYWORDS = [
 const TEAM_BADGE_CACHE = new Map();
 const LEAGUE_LOGO_CACHE = new Map();
 const LINEUP_CACHE = new Map();
+const FIXTURE_DETAIL_CACHE = new Map();
 const SPORTMONKS_PROXY_URL = "/api/sportmonks";
 let RESOLVED_COMPETITIONS = null;
 
@@ -321,6 +327,19 @@ function showToast(message) {
   }, 2600);
 }
 
+function setButtonLoading(btn, loading, loadingText = "Loading...") {
+  if (!btn) return;
+  if (loading) {
+    if (!btn.dataset.originalText) btn.dataset.originalText = btn.textContent || "";
+    btn.textContent = loadingText;
+    btn.disabled = true;
+    btn.classList.add("loading-state");
+  } else {
+    if (btn.dataset.originalText) btn.textContent = btn.dataset.originalText;
+    btn.disabled = false;
+    btn.classList.remove("loading-state");
+  }
+}
 
 function animateListEntrance(container, selector) {
   if (!container) return;
@@ -331,6 +350,7 @@ function animateListEntrance(container, selector) {
     item.classList.add("stagger-in");
   });
 }
+
 function setView(view) {
   [els.authView, els.playerView, els.adminView].forEach((v) => {
     v.classList.add("hidden");
@@ -353,31 +373,51 @@ function setView(view) {
     }
   });
 }
+function initStaticUi() {
+  const toPhoneDigits = (value) => String(value || "").replace(/\D/g, "");
+  const toWhatsAppUrl = (value) => {
+    const digits = toPhoneDigits(value);
+    return digits ? "https://wa.me/" + digits : "#";
+  };
 
+  const phoneDigits = toPhoneDigits(CONTACT_PHONE);
+  const whatsappUrl = toWhatsAppUrl(CONTACT_PHONE);
+  const phoneUrl = phoneDigits ? "tel:+" + phoneDigits : "#";
+  const emailUrl = CONTACT_EMAIL ? "mailto:" + CONTACT_EMAIL : "#";
+  const facebookUrl = CONTACT_FACEBOOK || "#";
 
-function formatMatchDate(dateStr, timeStr) {
-  if (!dateStr || !timeStr) return "TBD";
-  const d = new Date(`${dateStr}T${timeStr}`);
-  if (isNaN(d)) return `${dateStr} ${timeStr}`;
-  return d.toLocaleString([], {
-    month: "short",
-    day: "2-digit",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit"
+  [els.contactWhatsappLink, els.contactWhatsappLinkPlayer].forEach((link) => {
+    if (!link) return;
+    link.href = whatsappUrl;
   });
-}
 
-function escapeHtml(str = "") {
-  return str.replace(/[&<>"']/g, (m) => ({
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    '"': "&quot;",
-    "'": "&#039;"
-  }[m]));
-}
+  [els.contactPhoneLink].forEach((link) => {
+    if (!link) return;
+    link.href = phoneUrl;
+  });
 
+  [els.contactEmailLink, els.contactEmailLinkPlayer].forEach((link) => {
+    if (!link) return;
+    link.href = emailUrl;
+  });
+
+  [els.contactFacebookLink, els.contactFacebookLinkPlayer].forEach((link) => {
+    if (!link) return;
+    link.href = facebookUrl;
+  });
+
+  if (els.bkashQrImage) {
+    els.bkashQrImage.src = BKASH_QR_IMAGE_URL;
+  }
+
+  if (els.bkashNumberText) {
+    els.bkashNumberText.textContent = BKASH_PAYMENT_NUMBER;
+  }
+
+  if (els.bkashNumberLink) {
+    els.bkashNumberLink.href = toWhatsAppUrl(BKASH_PAYMENT_NUMBER);
+  }
+}
 function stopFixturesAutoRefresh() {
   if (state.fixturesRefreshTimer) {
     clearInterval(state.fixturesRefreshTimer);
@@ -393,168 +433,24 @@ function startFixturesAutoRefresh() {
     loadDailyFixtures({ silent: true });
   }, 45000);
 }
+
 function stopLiveListeners() {
   state.featuredUnsub?.();
   state.bookingsUnsub?.();
   state.announcementsUnsub?.();
   state.adminMatchesUnsub?.();
+  state.activityUnsub?.();
   state.myBookingsUnsub?.();
+
   state.featuredUnsub = null;
   state.bookingsUnsub = null;
   state.announcementsUnsub = null;
   state.adminMatchesUnsub = null;
   state.activityUnsub = null;
   state.myBookingsUnsub = null;
+
   stopFixturesAutoRefresh();
 }
-
-function getMapSnapshotUrl(lat, lng) {
-  const latNum = Number(lat).toFixed(6);
-  const lngNum = Number(lng).toFixed(6);
-  return `https://staticmap.openstreetmap.de/staticmap.php?center=${latNum},${lngNum}&zoom=17&size=900x460&markers=${latNum},${lngNum},red-pushpin`;
-}
-
-function getGoogleMapsUrl(lat, lng) {
-  return `https://www.google.com/maps?q=${lat},${lng}`;
-}
-
-function getGoogleMapsEmbedUrl(lat, lng) {
-  return `https://www.google.com/maps?q=${lat},${lng}&output=embed`;
-}
-
-function parsePhotoUrls(raw) {
-  return String(raw || "")
-    .split(/\r?\n|,/)
-    .map((item) => item.trim())
-    .filter((item) => /^https?:\/\//i.test(item));
-}
-
-function renderVenuePhotos(photoUrls = []) {
-  if (!els.heroPhotoStrip) return;
-  if (!photoUrls.length) {
-    els.heroPhotoStrip.innerHTML = "";
-    els.heroPhotoStrip.classList.add("hidden");
-    return;
-  }
-
-  els.heroPhotoStrip.innerHTML = photoUrls.map((url) => {
-    const safe = escapeHtml(url);
-    return `<a href="${safe}" target="_blank" rel="noopener noreferrer" class="hero-photo-link"><img src="${safe}" alt="Venue photo" class="hero-photo-thumb" /></a>`;
-  }).join("");
-  els.heroPhotoStrip.classList.remove("hidden");
-}
-function setMapSelection(lat, lng, shouldPan = true) {
-  const latNum = Number(Number(lat).toFixed(6));
-  const lngNum = Number(Number(lng).toFixed(6));
-  if (!Number.isFinite(latNum) || !Number.isFinite(lngNum)) return;
-
-  if (els.adminLat) els.adminLat.value = String(latNum);
-  if (els.adminLng) els.adminLng.value = String(lngNum);
-
-  const snapshot = getMapSnapshotUrl(latNum, lngNum);
-  if (els.adminMapImage) els.adminMapImage.value = snapshot;
-  if (els.adminMapPreview) els.adminMapPreview.src = snapshot;
-  els.adminMapPreviewWrap?.classList.remove("hidden");
-  if (els.adminMapCoords) els.adminMapCoords.textContent = `Lat ${latNum}, Lng ${lngNum}`;
-  if (els.mapPickInfo) els.mapPickInfo.textContent = `Selected point: ${latNum}, ${lngNum}`;
-
-  if (adminMap) {
-    if (!adminMapMarker) {
-      adminMapMarker = window.L.marker([latNum, lngNum]).addTo(adminMap);
-    } else {
-      adminMapMarker.setLatLng([latNum, lngNum]);
-    }
-
-    if (shouldPan) {
-      adminMap.setView([latNum, lngNum], 17);
-    }
-  }
-}
-
-function initAdminMap() {
-  if (!window.L || !els.adminMapCanvas) {
-    showToast("Map could not be loaded.");
-    return;
-  }
-
-  if (adminMap) {
-    adminMap.invalidateSize();
-    return;
-  }
-
-  adminMap = window.L.map(els.adminMapCanvas, { zoomControl: true }).setView([DEFAULT_MAP_POINT.lat, DEFAULT_MAP_POINT.lng], 13);
-
-  window.L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    maxZoom: 19,
-    attribution: "&copy; OpenStreetMap contributors"
-  }).addTo(adminMap);
-
-  adminMap.on("click", (event) => {
-    setMapSelection(event.latlng.lat, event.latlng.lng, false);
-  });
-}
-
-function openMapPicker() {
-  if (!els.mapPickerModal || !els.adminLat || !els.adminLng) return;
-  els.mapPickerModal.classList.remove("hidden");
-  if (els.mapSearchInput) els.mapSearchInput.value = "";
-  if (els.mapSearchResults) els.mapSearchResults.innerHTML = "";
-
-  setTimeout(() => {
-    initAdminMap();
-
-    const savedLat = Number(els.adminLat.value);
-    const savedLng = Number(els.adminLng.value);
-    const lat = Number.isFinite(savedLat) ? savedLat : DEFAULT_MAP_POINT.lat;
-    const lng = Number.isFinite(savedLng) ? savedLng : DEFAULT_MAP_POINT.lng;
-
-    setMapSelection(lat, lng, true);
-    adminMap?.invalidateSize();
-  }, 40);
-}
-
-function closeMapPicker() {
-  els.mapPickerModal?.classList.add("hidden");
-  if (els.mapSearchResults) els.mapSearchResults.innerHTML = "";
-}
-function confirmMapPicker() {
-  if (!els.adminLat || !els.adminLng) return;
-  const lat = Number(els.adminLat.value);
-  const lng = Number(els.adminLng.value);
-
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-    showToast("Select a field point on the map first.");
-    return;
-  }
-
-  closeMapPicker();
-  showToast("Field location saved.");
-}
-function toWhatsAppUrl(localPhone) {
-  const digits = (localPhone || "").replace(/\D/g, "");
-  const international = digits.startsWith("0") ? `88${digits}` : digits;
-  return `https://wa.me/${international}`;
-}
-
-function initStaticUi() {
-  if (els.bkashQrImage) {
-    els.bkashQrImage.src = BKASH_QR_IMAGE_URL;
-    els.bkashQrImage.onerror = () => {
-      els.bkashQrImage.alt = "bKash QR not found. Upload exact QR image to assets/bkash-qr.png";
-      showToast("bKash QR image missing. Please upload assets/bkash-qr.png");
-    };
-  }
-  if (els.bkashNumberText) els.bkashNumberText.textContent = BKASH_PAYMENT_NUMBER;
-  if (els.bkashNumberLink) els.bkashNumberLink.href = toWhatsAppUrl(BKASH_PAYMENT_NUMBER);
-
-  if (els.contactWhatsappLink) els.contactWhatsappLink.href = toWhatsAppUrl(CONTACT_PHONE);
-  if (els.contactEmailLink) els.contactEmailLink.href = `mailto:${CONTACT_EMAIL}`;
-  if (els.contactFacebookLink) els.contactFacebookLink.href = CONTACT_FACEBOOK;
-  if (els.contactWhatsappLinkPlayer) els.contactWhatsappLinkPlayer.href = toWhatsAppUrl(CONTACT_PHONE);
-  if (els.contactEmailLinkPlayer) els.contactEmailLinkPlayer.href = `mailto:${CONTACT_EMAIL}`;
-  if (els.contactFacebookLinkPlayer) els.contactFacebookLinkPlayer.href = CONTACT_FACEBOOK;
-}
-
 function initMotionUi() {
   document.addEventListener("click", (event) => {
     const target = event.target.closest("button, .tab, .contact-link");
@@ -566,7 +462,31 @@ function initMotionUi() {
     target.classList.add("btn-pop");
     setTimeout(() => target.classList.remove("btn-pop"), 200);
   });
+
+  document.addEventListener("pointerdown", (event) => {
+    const target = event.target.closest("button, .chip-tab, .more-menu-item");
+    if (!target) return;
+    target.classList.add("is-pressing");
+  });
+
+  document.addEventListener("pointerup", () => {
+    document.querySelectorAll(".is-pressing").forEach((el) => el.classList.remove("is-pressing"));
+  });
+
+  document.querySelectorAll(".panel-card, .hero-match-card, .fixture-group").forEach((card) => {
+    card.addEventListener("pointermove", (e) => {
+      if (window.matchMedia("(max-width: 820px)").matches) return;
+      const r = card.getBoundingClientRect();
+      const x = ((e.clientX - r.left) / r.width - 0.5) * 4;
+      const y = ((e.clientY - r.top) / r.height - 0.5) * -4;
+      card.style.transform = `translateY(-2px) rotateX(${y}deg) rotateY(${x}deg)`;
+    });
+    card.addEventListener("pointerleave", () => {
+      card.style.transform = "";
+    });
+  });
 }
+
 function toggleMoreMenu(forceOpen = null) {
   if (!els.moreMenuPanel) return;
   const shouldOpen = forceOpen === null ? els.moreMenuPanel.classList.contains("hidden") : forceOpen;
@@ -600,7 +520,10 @@ function initMoreMenu() {
   });
 
   document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") closeMoreMenu();
+    if (e.key === "Escape") {
+      closeMoreMenu();
+      closeFixtureDetailModal();
+    }
   });
 
   document.querySelectorAll(".more-menu-item").forEach((btn) => {
@@ -616,7 +539,6 @@ function initMoreMenu() {
     });
   });
 }
-
 function isPopularCompetition(name = "") {
   const lower = String(name).toLowerCase();
   return POPULAR_LEAGUE_KEYWORDS.some((key) => lower.includes(key));
@@ -1069,7 +991,8 @@ function renderFixtures(fixtures = []) {
             <img src="${awayBadge}" alt="${escapeHtml(item.away)}" />
           </div>
           <div class="fixture-actions-row">
-            <button class="secondary-btn fixture-lineup-btn" type="button" data-fixtureid="${escapeHtml(String(item.id || ""))}">View lineups</button>
+            <button class="secondary-btn fixture-detail-btn" type="button" data-fixtureid="${escapeHtml(String(item.id || ""))}">Match center</button>
+            <button class="secondary-btn fixture-lineup-btn" type="button" data-fixtureid="${escapeHtml(String(item.id || ""))}">Lineups</button>
             <div class="fixture-lineup-box hidden" id="lineup-${escapeHtml(String(item.id || ""))}"></div>
           </div>
         </article>
@@ -1088,6 +1011,9 @@ function renderFixtures(fixtures = []) {
   }).join("");
 
   els.fixturesList.innerHTML = html;
+  els.fixturesList.querySelectorAll(".fixture-detail-btn").forEach((btn) => {
+    btn.addEventListener("click", () => openFixtureDetail(String(btn.dataset.fixtureid || ""), btn));
+  });
   els.fixturesList.querySelectorAll(".fixture-lineup-btn").forEach((btn) => {
     btn.addEventListener("click", () => loadFixtureLineup(String(btn.dataset.fixtureid || ""), btn));
   });
@@ -1140,6 +1066,128 @@ async function loadFixtureLineup(fixtureId, triggerBtn) {
     box.innerHTML = `<div class="muted">Could not load lineup now.</div>`;
   }
 }
+function formatEventMinute(row = {}) {
+  const min = Number.isFinite(Number(row.minute)) ? Number(row.minute) : 0;
+  const extra = Number.isFinite(Number(row.extraMinute)) ? Number(row.extraMinute) : null;
+  if (extra && extra > 0) return `${min}+${extra}'`;
+  return `${min}'`;
+}
+
+function renderFixtureDetail(detail = {}) {
+  const home = escapeHtml(detail.home || "Home");
+  const away = escapeHtml(detail.away || "Away");
+  const homeBadge = escapeHtml(detail.homeBadge || `https://placehold.co/72x72/0f1d3a/e9f2ff?text=${encodeURIComponent((detail.home || "H").slice(0, 2).toUpperCase())}`);
+  const awayBadge = escapeHtml(detail.awayBadge || `https://placehold.co/72x72/0f1d3a/e9f2ff?text=${encodeURIComponent((detail.away || "A").slice(0, 2).toUpperCase())}`);
+  const score = (Number.isFinite(Number(detail.homeScore)) && Number.isFinite(Number(detail.awayScore)))
+    ? `${detail.homeScore} - ${detail.awayScore}`
+    : "vs";
+
+  const statRows = Array.isArray(detail.statistics) ? detail.statistics.slice(0, 14) : [];
+  const statHtml = statRows.length
+    ? `<div class="fixture-stat-grid">${statRows.map((s) => `<div class="fixture-stat-row"><span>${escapeHtml(String(s.home ?? "-"))}</span><strong>${escapeHtml(s.name || "Stat")}</strong><span>${escapeHtml(String(s.away ?? "-"))}</span></div>`).join("")}</div>`
+    : `<div class="empty-box">No stats available yet.</div>`;
+
+  const events = Array.isArray(detail.events) ? detail.events.slice(-16).reverse() : [];
+  const eventHtml = events.length
+    ? `<div class="fixture-event-list">${events.map((ev) => `
+      <article class="fixture-event-item">
+        <div class="fixture-event-minute">${escapeHtml(formatEventMinute(ev))}</div>
+        <div>
+          <strong>${escapeHtml(ev.type || "Event")}</strong>
+          <div class="muted">${escapeHtml([ev.player, ev.relatedPlayer && `for ${ev.relatedPlayer}`, ev.addition || ev.info || ev.result].filter(Boolean).join(" | "))}</div>
+        </div>
+      </article>
+    `).join("")}</div>`
+    : `<div class="empty-box">No timeline events yet.</div>`;
+
+  const lineupSide = (teamName, rows) => {
+    const list = Array.isArray(rows) ? rows : [];
+    if (!list.length) return `<div class="empty-box">${escapeHtml(teamName || "Team")} lineup not published.</div>`;
+    return `<div class="fixture-lineup-side"><h5>${escapeHtml(teamName || "Team")}</h5><ol>${list.slice(0, 15).map((p) => `<li>${escapeHtml([p.number, p.name].filter(Boolean).join('. '))}</li>`).join("")}</ol></div>`;
+  };
+
+  const weatherText = detail.weather
+    ? [detail.weather.description, detail.weather.temperature && `Temp ${detail.weather.temperature}`, detail.weather.humidity && `Humidity ${detail.weather.humidity}`, detail.weather.wind && `Wind ${detail.weather.wind}`].filter(Boolean).join(" | ")
+    : "Weather not available";
+
+  const sidelined = Array.isArray(detail.sidelined) ? detail.sidelined.slice(0, 10) : [];
+
+  return `
+    <section class="fixture-center-head">
+      <div class="fixture-center-team"><img src="${homeBadge}" alt="${home}" /><span>${home}</span></div>
+      <div class="fixture-center-score">${escapeHtml(score)}</div>
+      <div class="fixture-center-team right"><span>${away}</span><img src="${awayBadge}" alt="${away}" /></div>
+    </section>
+
+    <section class="fixture-center-panels">
+      <article class="fixture-center-panel">
+        <h4>Match Facts</h4>
+        <div class="muted">${escapeHtml(detail.status || "Scheduled")} | ${escapeHtml(detail.resultInfo || detail.kickoff || "")}</div>
+        <div class="muted">Venue: ${escapeHtml([detail.venue, detail.venueCity].filter(Boolean).join(', ') || 'TBD')}</div>
+        <div class="muted">Weather: ${escapeHtml(weatherText)}</div>
+      </article>
+      <article class="fixture-center-panel">
+        <h4>Statistics</h4>
+        ${statHtml}
+      </article>
+      <article class="fixture-center-panel full">
+        <h4>Timeline</h4>
+        ${eventHtml}
+      </article>
+      <article class="fixture-center-panel full">
+        <h4>Lineups</h4>
+        <div class="fixture-lineup-grid">
+          ${lineupSide(detail?.lineups?.homeTeam || detail.home, detail?.lineups?.home)}
+          ${lineupSide(detail?.lineups?.awayTeam || detail.away, detail?.lineups?.away)}
+        </div>
+      </article>
+      <article class="fixture-center-panel full">
+        <h4>Unavailable / Sidelined</h4>
+        ${sidelined.length ? `<ul class="fixture-sidelined-list">${sidelined.map((s) => `<li>${escapeHtml([s.player, s.reason, s.startDate && `from ${s.startDate}`, s.endDate && `to ${s.endDate}`].filter(Boolean).join(' | '))}</li>`).join("")}</ul>` : '<div class="muted">No sidelined data.</div>'}
+      </article>
+    </section>
+  `;
+}
+
+function openFixtureDetailModal(title, meta, bodyHtml) {
+  if (!els.fixtureDetailModal || !els.fixtureDetailBody) return;
+  if (els.fixtureDetailTitle) els.fixtureDetailTitle.textContent = title || "Match Center";
+  if (els.fixtureDetailMeta) els.fixtureDetailMeta.textContent = meta || "";
+  els.fixtureDetailBody.innerHTML = bodyHtml || "<div class=\"empty-box\">No data available.</div>";
+  els.fixtureDetailModal.classList.remove("hidden");
+}
+
+function closeFixtureDetailModal() {
+  els.fixtureDetailModal?.classList.add("hidden");
+}
+
+async function openFixtureDetail(fixtureId, triggerBtn = null) {
+  if (!fixtureId) return;
+  const fixture = (state.fixturesData || []).find((f) => String(f.id) === String(fixtureId));
+  const title = fixture ? `${fixture.home} vs ${fixture.away}` : "Match Center";
+  const meta = fixture ? `${fixture.league || "Competition"} | ${fixture.kickoff || "TBD"}` : "";
+
+  setButtonLoading(triggerBtn, true, "Loading...");
+  openFixtureDetailModal(title, meta, '<div class="empty-box">Loading match center...</div>');
+
+  try {
+    let detail = FIXTURE_DETAIL_CACHE.get(String(fixtureId));
+    if (!detail) {
+      const resp = await fetch(`${SPORTMONKS_PROXY_URL}?type=detail&fixtureId=${encodeURIComponent(String(fixtureId))}`);
+      const payload = await resp.json();
+      if (!resp.ok || !payload?.ok || !payload?.detail) throw new Error(payload?.error || "Could not load match center.");
+      detail = payload.detail;
+      FIXTURE_DETAIL_CACHE.set(String(fixtureId), detail);
+    }
+
+    openFixtureDetailModal(title, meta, renderFixtureDetail(detail));
+  } catch (err) {
+    console.error(err);
+    openFixtureDetailModal(title, meta, `<div class="empty-box">${escapeHtml(err?.message || "Could not load match details right now.")}</div>`);
+  } finally {
+    setButtonLoading(triggerBtn, false);
+  }
+}
 function renderHighlights(items = [], query = "") {
   if (!els.highlightsList) return;
 
@@ -1152,7 +1200,7 @@ function renderHighlights(items = [], query = "") {
 
   if (els.highlightsMeta) {
     const q = query ? ` for "${query}"` : "";
-    els.highlightsMeta.textContent = `${items.length} videos loaded${q}.`;
+    els.highlightsMeta.textContent = `${items.length} videos loaded${q}. Sources: ScoreBat + TheSportsDB + YouTube shortcuts.`;
   }
 
   els.highlightsList.innerHTML = items.map((item) => `
@@ -1162,7 +1210,8 @@ function renderHighlights(items = [], query = "") {
       </a>
       <div class="video-meta">
         <strong>${escapeHtml(item.title)}</strong>
-        <div class="muted">${escapeHtml(item.competition)}</div>
+        <div class="muted">${escapeHtml(item.competition || "Football")}</div>
+        <div class="muted">${escapeHtml([item.source, item.publishedAt].filter(Boolean).join(" | "))}</div>
       </div>
     </article>
   `).join("");
@@ -1185,10 +1234,13 @@ function buildHighlightFallbacks(queryText = "") {
   return topics.map((topic) => ({
     title: `Search highlights: ${topic}`,
     competition: "YouTube search",
+    source: "YouTube",
+    publishedAt: "",
     thumbnail: `https://placehold.co/960x540/06161b/e8fff3?text=${encodeURIComponent(topic)}`,
     url: `https://www.youtube.com/results?search_query=${encodeURIComponent(topic)}`
   }));
 }
+
 async function loadDailyFixtures(options = {}) {
   if (!els.fixturesList) return;
 
@@ -1203,6 +1255,7 @@ async function loadDailyFixtures(options = {}) {
     els.fixturesList.innerHTML = `<div class="skeleton-grid"><div class="skeleton-card"></div><div class="skeleton-card"></div><div class="skeleton-card"></div></div>`;
   }
 
+  setButtonLoading(els.refreshFixturesBtn, true, "Refreshing...");
   try {
     const resp = await fetch(`${SPORTMONKS_PROXY_URL}?type=fixtures&date=${encodeURIComponent(isoDate)}`);
     const payload = await resp.json();
@@ -1231,30 +1284,72 @@ async function loadDailyFixtures(options = {}) {
       ? "Sportmonks token missing in Vercel env. Add SPORTMONKS_API_TOKEN."
       : "Could not load fixtures right now.";
     els.fixturesList.innerHTML = `<div class="empty-box">${escapeHtml(message)}</div>`;
+  } finally {
+    setButtonLoading(els.refreshFixturesBtn, false);
   }
 }
+async function loadSportsDbHighlights() {
+  const leagues = ["4328", "4335", "4331", "4332", "4334"]; // EPL, La Liga, Bundesliga, Serie A, Ligue 1
+  const out = [];
+
+  await Promise.all(leagues.map(async (leagueId) => {
+    try {
+      const res = await fetch(`https://www.thesportsdb.com/api/v1/json/123/eventspastleague.php?id=${leagueId}`);
+      const data = await res.json();
+      const events = Array.isArray(data?.events) ? data.events : [];
+      events.slice(0, 12).forEach((ev) => {
+        const video = String(ev?.strVideo || "").trim();
+        if (!video) return;
+        out.push({
+          title: ev?.strEvent || `${ev?.strHomeTeam || "Home"} vs ${ev?.strAwayTeam || "Away"}`,
+          competition: ev?.strLeague || "Football",
+          source: "TheSportsDB",
+          publishedAt: ev?.dateEvent || "",
+          thumbnail: ev?.strThumb || ev?.strBanner || "https://images.unsplash.com/photo-1574629810360-7efbbe195018?auto=format&fit=crop&w=900&q=80",
+          url: video
+        });
+      });
+    } catch {}
+  }));
+
+  return out;
+}
+
 async function loadHighlights(queryText = "") {
   if (!els.highlightsList) return;
 
   const query = String(queryText || "").trim().toLowerCase();
+  setButtonLoading(els.highlightsSearchBtn, true, "Searching...");
   els.highlightsList.innerHTML = `<div class="skeleton-grid"><div class="skeleton-card"></div><div class="skeleton-card"></div><div class="skeleton-card"></div></div>`;
 
   try {
-    const response = await fetch("https://www.scorebat.com/video-api/v3/");
-    const payload = await response.json();
-    const raw = Array.isArray(payload?.response) ? payload.response : [];
+    const [scorebatItems, sportsDbItems] = await Promise.all([
+      (async () => {
+        try {
+          const response = await fetch("https://www.scorebat.com/video-api/v3/");
+          const payload = await response.json();
+          const raw = Array.isArray(payload?.response) ? payload.response : [];
 
-    const items = raw.map((item) => {
-      const firstVideo = Array.isArray(item.videos) ? item.videos[0] : null;
-      const url = extractEmbedSrc(firstVideo?.embed || "") || item.matchviewUrl || item.url || "#";
-      return {
-        title: item.title || "Match highlight",
-        competition: item.competition || "Football",
-        thumbnail: item.thumbnail || "https://images.unsplash.com/photo-1574629810360-7efbbe195018?auto=format&fit=crop&w=900&q=80",
-        url
-      };
-    }).filter((item) => item.url && item.url !== "#");
+          return raw.map((item) => {
+            const firstVideo = Array.isArray(item.videos) ? item.videos[0] : null;
+            const url = extractEmbedSrc(firstVideo?.embed || "") || item.matchviewUrl || item.url || "#";
+            return {
+              title: item.title || "Match highlight",
+              competition: item.competition || "Football",
+              source: "ScoreBat",
+              publishedAt: item.date ? new Date(item.date).toLocaleString() : "",
+              thumbnail: item.thumbnail || "https://images.unsplash.com/photo-1574629810360-7efbbe195018?auto=format&fit=crop&w=900&q=80",
+              url
+            };
+          }).filter((item) => item.url && item.url !== "#");
+        } catch {
+          return [];
+        }
+      })(),
+      loadSportsDbHighlights()
+    ]);
 
+    const items = [...scorebatItems, ...sportsDbItems];
     state.highlightsData = items;
 
     let filtered = items;
@@ -1274,7 +1369,7 @@ async function loadHighlights(queryText = "") {
       deduped.push(item);
     });
 
-    const maxItems = query ? 40 : 30;
+    const maxItems = query ? 48 : 36;
     const shortlist = deduped.slice(0, maxItems);
     if (!shortlist.length) {
       renderHighlights(buildHighlightFallbacks(queryText), queryText);
@@ -1287,6 +1382,8 @@ async function loadHighlights(queryText = "") {
     console.error(err);
     renderHighlights(buildHighlightFallbacks(queryText), queryText);
     if (els.highlightsMeta) els.highlightsMeta.textContent = "Video API unavailable. Showing YouTube search shortcuts.";
+  } finally {
+    setButtonLoading(els.highlightsSearchBtn, false);
   }
 }
 function runHighlightsSearch() {
@@ -1569,7 +1666,7 @@ function ensureLoginActivityLogged(user) {
 function listenAdminActivity() {
   state.activityUnsub?.();
   state.activityUnsub = onSnapshot(
-    query(collection(db, "activityLogs"), orderBy("createdAt", "desc"), limit(300)),
+    collection(db, "activityLogs"),
     (snap) => {
       if (!els.adminActivityList) return;
 
@@ -1580,7 +1677,11 @@ function listenAdminActivity() {
         return;
       }
 
-      const entries = snap.docs.map((d) => d.data());
+      const entries = snap.docs
+        .map((d) => d.data())
+        .sort((a, b) => (b.createdAt?.toDate?.()?.getTime?.() || 0) - (a.createdAt?.toDate?.()?.getTime?.() || 0))
+        .slice(0, 300);
+
       renderAdminActivitySummary(entries);
       renderAdminUserStats(entries);
 
@@ -1612,7 +1713,9 @@ function listenAdminActivity() {
     },
     (err) => {
       console.error(err);
-      showToast("Could not load activity timeline.");
+      if (els.adminActivityList) els.adminActivityList.innerHTML = `<div class="empty-box">Activity timeline unavailable right now.</div>`;
+      if (els.adminActivitySummary) els.adminActivitySummary.innerHTML = `<div class="empty-box">No summary yet.</div>`;
+      if (els.adminActivityUsers) els.adminActivityUsers.innerHTML = `<div class="empty-box">No user activity yet.</div>`;
     }
   );
 }
@@ -1830,6 +1933,8 @@ async function handleForgotPassword() {
 }
 async function logout() {
   try {
+    closeMoreMenu();
+    stopLiveListeners();
     await signOut(auth);
     showToast("Logged out.");
   } catch (err) {
@@ -1942,7 +2047,7 @@ function renderMyBookings(items = []) {
   animateListEntrance(els.myBookingsList, ".announcement-card");
 }
 async function fetchMyBookingsFallback(userId) {
-  const matchesSnap = await getDocs(query(collection(db, "matches"), orderBy("date", "desc"), limit(40)));
+  const matchesSnap = await getDocs(collection(db, "matches"));
   const rows = [];
 
   for (const matchDoc of matchesSnap.docs) {
@@ -1959,58 +2064,41 @@ async function fetchMyBookingsFallback(userId) {
     });
   }
 
-  rows.sort((a, b) => {
-    const at = Date.parse(`${a.date || "1970-01-01"}T${a.time || "00:00:00"}`) || 0;
-    const bt = Date.parse(`${b.date || "1970-01-01"}T${b.time || "00:00:00"}`) || 0;
-    return bt - at;
-  });
-
-  return rows.slice(0, 20);
+  return rows
+    .sort((a, b) => {
+      const at = Date.parse(`${a.date || "1970-01-01"}T${a.time || "00:00:00"}`) || 0;
+      const bt = Date.parse(`${b.date || "1970-01-01"}T${b.time || "00:00:00"}`) || 0;
+      return bt - at;
+    })
+    .slice(0, 20);
 }
 
 function listenMyBookings(userId) {
   if (!userId || !els.myBookingsList) return;
   state.myBookingsUnsub?.();
 
-  const q = query(
-    collectionGroup(db, "bookings"),
-    where("userId", "==", userId),
-    orderBy("updatedAt", "desc"),
-    limit(20)
-  );
-
-  state.myBookingsUnsub = onSnapshot(q, async (snap) => {
-    const items = await Promise.all(snap.docs.map(async (d) => {
-      const data = d.data();
-      const parts = d.ref.path.split("/");
-      const matchId = parts[1] || "";
-      let match = {};
+  state.myBookingsUnsub = onSnapshot(
+    collection(db, "matches"),
+    async () => {
       try {
-        const matchSnap = await getDoc(doc(db, "matches", matchId));
-        match = matchSnap.exists() ? matchSnap.data() : {};
-      } catch {}
-
-      return {
-        id: d.id,
-        ...data,
-        location: match.location || "Venue",
-        date: match.date || "",
-        time: match.time || "",
-        matchStatus: match.status || "open"
-      };
-    }));
-
-    renderMyBookings(items);
-  }, async (err) => {
-    console.error(err);
-    try {
-      const fallback = await fetchMyBookingsFallback(userId);
-      renderMyBookings(fallback);
-    } catch (fallbackErr) {
-      console.error(fallbackErr);
-      if (els.myBookingsList) els.myBookingsList.innerHTML = `<div class="empty-box">Could not load booking history.</div>`;
+        const rows = await fetchMyBookingsFallback(userId);
+        renderMyBookings(rows);
+      } catch (err) {
+        console.error(err);
+        if (els.myBookingsList) els.myBookingsList.innerHTML = `<div class="empty-box">Could not load booking history.</div>`;
+      }
+    },
+    async (err) => {
+      console.error(err);
+      try {
+        const rows = await fetchMyBookingsFallback(userId);
+        renderMyBookings(rows);
+      } catch (fallbackErr) {
+        console.error(fallbackErr);
+        if (els.myBookingsList) els.myBookingsList.innerHTML = `<div class="empty-box">Could not load booking history.</div>`;
+      }
     }
-  });
+  );
 }
 function updateHero(match, bookings) {
   const total = Number(match.totalSlots || 0);
@@ -2090,14 +2178,20 @@ function listenBookingsForMatch(matchId) {
 
 function listenFeaturedMatches() {
   state.featuredUnsub?.();
-  const q = query(
-    collection(db, "matches"),
-    where("status", "==", "open"),
-    limit(1)
-  );
+  state.featuredUnsub = onSnapshot(collection(db, "matches"), (snap) => {
+    const docs = snap.docs
+      .map((d) => ({ id: d.id, ...d.data() }))
+      .sort((a, b) => {
+        const as = (a.status || "").toLowerCase() === "open" ? 0 : 1;
+        const bs = (b.status || "").toLowerCase() === "open" ? 0 : 1;
+        if (as !== bs) return as - bs;
+        const at = Date.parse(`${a.date || "1970-01-01"}T${a.time || "00:00:00"}`) || 0;
+        const bt = Date.parse(`${b.date || "1970-01-01"}T${b.time || "00:00:00"}`) || 0;
+        return bt - at;
+      });
 
-  state.featuredUnsub = onSnapshot(q, (snap) => {
-    if (snap.empty) {
+    const top = docs[0];
+    if (!top) {
       state.featuredMatch = null;
       els.heroBadge.textContent = "No match";
       els.heroVenue.textContent = "No match scheduled";
@@ -2121,34 +2215,40 @@ function listenFeaturedMatches() {
       return;
     }
 
-    const d = snap.docs[0];
-    state.featuredMatch = { id: d.id, ...d.data() };
-    listenBookingsForMatch(d.id);
+    state.featuredMatch = top;
+    listenBookingsForMatch(top.id);
   }, (err) => {
     console.error(err);
-    showToast("Could not load match.");
+    if (els.playersList) els.playersList.innerHTML = `<div class="empty-box">Could not load match right now.</div>`;
   });
 }
 
 function listenAnnouncements(target, isAdmin = false) {
   state.announcementsUnsub?.();
   state.announcementsUnsub = onSnapshot(
-    query(collection(db, "announcements"), orderBy("createdAt", "desc")),
+    collection(db, "announcements"),
     (snap) => {
       if (snap.empty) {
         target.innerHTML = `<div class="empty-box">No announcements yet.</div>`;
         return;
       }
 
-      target.innerHTML = snap.docs.map((d) => {
-        const a = d.data();
+      const ordered = snap.docs
+        .map((d) => ({ id: d.id, ...d.data() }))
+        .sort((a, b) => {
+          const at = a.createdAt?.toDate?.()?.getTime?.() || 0;
+          const bt = b.createdAt?.toDate?.()?.getTime?.() || 0;
+          return bt - at;
+        });
+
+      target.innerHTML = ordered.map((a) => {
         const date = a.createdAt?.toDate?.() ? a.createdAt.toDate().toLocaleString() : "";
 
         if (!isAdmin) {
           return `<div class="announcement-card"><strong>${escapeHtml(a.text || "")}</strong><div class="muted">${date}</div></div>`;
         }
 
-        return `<div class="announcement-card"><strong>${escapeHtml(a.text || "")}</strong><div class="muted">${date}</div><div class="admin-actions top-space"><button class="secondary-btn edit-announcement-btn" data-id="${d.id}">Edit</button><button class="ghost-btn delete-announcement-btn" data-id="${d.id}">Delete</button></div></div>`;
+        return `<div class="announcement-card"><strong>${escapeHtml(a.text || "")}</strong><div class="muted">${date}</div><div class="admin-actions top-space"><button class="secondary-btn edit-announcement-btn" data-id="${a.id}">Edit</button><button class="ghost-btn delete-announcement-btn" data-id="${a.id}">Delete</button></div></div>`;
       }).join("");
 
       if (isAdmin) {
@@ -2167,7 +2267,7 @@ function listenAnnouncements(target, isAdmin = false) {
     },
     (err) => {
       console.error(err);
-      showToast("Could not load announcements.");
+      target.innerHTML = `<div class="empty-box">Could not load announcements right now.</div>`;
     }
   );
 }
@@ -2405,16 +2505,25 @@ async function createMatch(e) {
 function listenAdminMatches() {
   state.adminMatchesUnsub?.();
   state.adminMatchesUnsub = onSnapshot(
-    query(collection(db, "matches"), orderBy("createdAt", "desc")),
+    collection(db, "matches"),
     async (snap) => {
       if (snap.empty) {
         els.adminMatchesList.innerHTML = `<div class="empty-box">No matches yet.</div>`;
         return;
       }
 
+      const orderedDocs = snap.docs
+        .map((d) => ({ id: d.id, data: d.data() }))
+        .sort((a, b) => {
+          const at = a.data.createdAt?.toDate?.()?.getTime?.() || 0;
+          const bt = b.data.createdAt?.toDate?.()?.getTime?.() || 0;
+          return bt - at;
+        });
+
       const cards = [];
-      for (const d of snap.docs) {
-        const m = d.data();
+      for (const row of orderedDocs) {
+        const d = { id: row.id };
+        const m = row.data;
         const bookingsSnap = await getDocs(collection(db, "matches", d.id, "bookings"));
         const booked = getBookedSlots(bookingsSnap.docs.map((b) => b.data()));
 
@@ -2449,7 +2558,7 @@ function listenAdminMatches() {
     },
     (err) => {
       console.error(err);
-      showToast("Could not load admin matches.");
+      if (els.adminMatchesList) els.adminMatchesList.innerHTML = `<div class="empty-box">Could not load matches right now.</div>`;
     }
   );
 }
@@ -2574,6 +2683,7 @@ on(els.extraPlayersList, "input", refreshBookingPreview);
 on(els.extraPlayerNames, "input", refreshBookingPreview);
 on(els.heroPaymentSelect, "change", refreshBookingPreview);
 on(els.closeReceiptModal, "click", closeReceiptModal);
+on(els.closeFixtureDetailModal, "click", closeFixtureDetailModal);
 on(els.downloadReceiptBtn, "click", downloadReceipt);
 on(els.adminMatchForm, "submit", createMatch);
 on(els.announcementForm, "submit", postAnnouncement);
@@ -2601,7 +2711,6 @@ document.addEventListener("visibilitychange", () => {
   if (document.hidden) return;
   if (els.playerView?.classList.contains("hidden")) return;
   loadDailyFixtures({ silent: true });
-});
 });
 
 initStaticUi();

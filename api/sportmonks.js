@@ -150,6 +150,82 @@ function parseLineups(fixture = {}) {
   };
 }
 
+function parseEvents(fixture = {}) {
+  const events = Array.isArray(fixture?.events) ? fixture.events : [];
+  return events
+    .map((ev) => ({
+      id: String(ev?.id || ""),
+      minute: Number.isFinite(Number(ev?.minute)) ? Number(ev.minute) : 0,
+      extraMinute: Number.isFinite(Number(ev?.extra_minute)) ? Number(ev.extra_minute) : null,
+      teamId: String(ev?.participant_id || ""),
+      player: ev?.player_name || "",
+      relatedPlayer: ev?.related_player_name || "",
+      type: ev?.type?.name || ev?.type?.developer_name || "Event",
+      typeCode: ev?.type?.code || "",
+      addition: ev?.addition || "",
+      info: ev?.info || "",
+      result: ev?.result || "",
+      sortOrder: Number.isFinite(Number(ev?.sort_order)) ? Number(ev.sort_order) : 999
+    }))
+    .filter((ev) => ev.id)
+    .sort((a, b) => {
+      if (a.minute !== b.minute) return a.minute - b.minute;
+      if ((a.extraMinute || 0) !== (b.extraMinute || 0)) return (a.extraMinute || 0) - (b.extraMinute || 0);
+      return a.sortOrder - b.sortOrder;
+    });
+}
+
+function parseStatistics(fixture = {}) {
+  const stats = Array.isArray(fixture?.statistics) ? fixture.statistics : [];
+  const participants = Array.isArray(fixture?.participants) ? fixture.participants : [];
+
+  const home = participants.find((p) => String(p?.meta?.location || "").toLowerCase() === "home");
+  const away = participants.find((p) => String(p?.meta?.location || "").toLowerCase() === "away");
+
+  const byType = new Map();
+  stats.forEach((row) => {
+    const typeName = row?.type?.name || row?.type?.developer_name || "Stat";
+    const entry = byType.get(typeName) || { name: typeName, home: null, away: null };
+    const participantId = String(row?.participant_id || "");
+    const value = row?.data?.value ?? row?.value ?? row?.data ?? null;
+    if (participantId && String(home?.id || "") === participantId) entry.home = value;
+    if (participantId && String(away?.id || "") === participantId) entry.away = value;
+    byType.set(typeName, entry);
+  });
+
+  return Array.from(byType.values()).slice(0, 40);
+}
+
+function parseFixtureDetail(fixture = {}) {
+  const base = mapFixture(fixture);
+  const lineups = parseLineups(fixture);
+  const events = parseEvents(fixture);
+  const statistics = parseStatistics(fixture);
+  const weather = fixture?.weatherreport || fixture?.weatherReport || null;
+  const sidelines = Array.isArray(fixture?.sidelined?.sideline) ? fixture.sidelined.sideline : [];
+
+  return {
+    ...base,
+    resultInfo: fixture?.result_info || "",
+    weather: weather ? {
+      description: weather?.description || weather?.condition || "",
+      temperature: weather?.temperature || weather?.temp || "",
+      humidity: weather?.humidity || "",
+      wind: weather?.wind || weather?.wind_speed || ""
+    } : null,
+    lineups,
+    events,
+    statistics,
+    sidelined: sidelines.slice(0, 30).map((s) => ({
+      teamId: String(s?.participant_id || s?.team_id || ""),
+      player: s?.player?.display_name || s?.player?.name || "",
+      reason: s?.type?.name || s?.type?.developer_name || "",
+      startDate: s?.start_date || "",
+      endDate: s?.end_date || ""
+    }))
+  };
+}
+
 module.exports = async (req, res) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET,OPTIONS");
@@ -168,6 +244,20 @@ module.exports = async (req, res) => {
   const type = String(req.query.type || "fixtures").toLowerCase();
 
   try {
+    if (type === "detail") {
+      const fixtureId = String(req.query.fixtureId || "");
+      if (!fixtureId) {
+        res.status(400).json({ error: "fixtureId is required" });
+        return;
+      }
+
+      const include = "participants;league;venue;state;scores;season;round;events.type;events.player;events.period;statistics.type;sidelined.sideline.player;sidelined.sideline.type;weatherReport;lineups.details.player";
+      const payload = await sportmonksFetch(`/fixtures/${fixtureId}`, { include });
+      const fixture = payload?.data || {};
+      res.status(200).json({ ok: true, detail: parseFixtureDetail(fixture) });
+      return;
+    }
+
     if (type === "lineups") {
       const fixtureId = String(req.query.fixtureId || "");
       if (!fixtureId) {

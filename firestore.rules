@@ -21,7 +21,7 @@ service cloud.firestore {
 
       match /bookings/{bookingId} {
         allow read: if isSignedIn();
-        allow create: if request.auth.uid == bookingId;
+        allow create, update: if request.auth.uid == bookingId || isAdmin();
         allow delete: if request.auth.uid == bookingId || isAdmin();
       }
     }
