@@ -1368,17 +1368,32 @@ async function fetchCompetitionFixturesForDate(competition, isoDate) {
   }
 }
 
+async function fetchCompetitionUpcomingFixtures(competition) {
+  if (!competition?.id) return [];
+
+  try {
+    const res = await fetch(`https://www.thesportsdb.com/api/v1/json/123/eventsnextleague.php?id=${encodeURIComponent(String(competition.id))}`);
+    const data = await res.json();
+    const events = Array.isArray(data?.events) ? data.events : [];
+    return events.map((ev) => mapSportsDbEventToFixture(ev, competition.category || "Global Football"));
+  } catch {
+    return [];
+  }
+}
+
 async function loadClientFixtureFallback(isoDate) {
   const competitions = await resolveCompetitions();
   await preloadLeagueLogos(competitions);
 
-  const competitionFixtures = await Promise.all(
-    competitions.slice(0, 12).map((competition) => fetchCompetitionFixturesForDate(competition, isoDate))
-  );
+  const competitionList = competitions.slice(0, 12);
+  const [competitionFixtures, upcomingFixtures, bangladeshFixtures] = await Promise.all([
+    Promise.all(competitionList.map((competition) => fetchCompetitionFixturesForDate(competition, isoDate))),
+    Promise.all(competitionList.map((competition) => fetchCompetitionUpcomingFixtures(competition))),
+    fetchBangladeshTeamFixtures()
+  ]);
 
-  const bangladeshFixtures = await fetchBangladeshTeamFixtures();
   const seen = new Set();
-  const deduped = [...competitionFixtures.flat(), ...bangladeshFixtures].filter((item) => {
+  const deduped = [...competitionFixtures.flat(), ...upcomingFixtures.flat(), ...bangladeshFixtures].filter((item) => {
     const key = `${item.id}::${item.home}::${item.away}`;
     if (seen.has(key)) return false;
     seen.add(key);
@@ -1443,6 +1458,22 @@ async function loadBrowserNewsFallback() {
 
   return merged.length ? merged.slice(0, 18) : buildLocalNewsFallback();
 }
+function getStoryImage(item = {}, fallbackType = "news") {
+  const fallback = fallbackType === "highlight"
+    ? "https://images.unsplash.com/photo-1574629810360-7efbbe195018?auto=format&fit=crop&w=1200&q=80"
+    : "https://images.unsplash.com/photo-1517466787929-bc90951d0974?auto=format&fit=crop&w=1200&q=80";
+  const raw = String(item.thumbnail || item.image || item.poster || "").trim();
+  if (!raw || raw.includes("placehold.co")) return fallback;
+  return raw;
+}
+
+function buildStoryFallbackBundle(queryText = "") {
+  return [
+    ...buildLocalNewsFallback().map((item) => ({ ...item, kind: "news" })),
+    ...buildHighlightFallbacks(queryText).map((item) => ({ ...item, kind: "highlight" }))
+  ];
+}
+
 function buildReceiptImage(data) {
   const canvas = document.createElement("canvas");
   canvas.width = 1200;
@@ -1915,71 +1946,91 @@ async function openFixtureDetail(fixtureId, triggerBtn = null) {
 function renderHighlights(items = [], query = "") {
   if (!els.highlightsList) return;
 
-  if (!items.length) {
-    const q = query ? ` for "${escapeHtml(query)}"` : "";
+  const normalized = Array.isArray(items) ? items : [];
+  const newsItems = normalized.filter((item) => String(item.kind || 'news').toLowerCase() === 'news');
+  const highlightItems = normalized.filter((item) => String(item.kind || '').toLowerCase() !== 'news');
+  const q = query ? ` for "${escapeHtml(query)}"` : "";
+
+  if (!newsItems.length && !highlightItems.length) {
     if (els.highlightsLead) {
       els.highlightsLead.innerHTML = `<div class="empty-box">No football stories found${q}.</div>`;
     }
     if (els.highlightsTrending) {
-      els.highlightsTrending.innerHTML = "";
+      els.highlightsTrending.innerHTML = `<div class="empty-box">No football news found${q}.</div>`;
     }
-    els.highlightsList.innerHTML = `<div class="empty-box">No football stories found${q}.</div>`;
+    els.highlightsList.innerHTML = `<div class="empty-box">No highlights found${q}.</div>`;
     if (els.highlightsMeta) els.highlightsMeta.textContent = "";
     return;
   }
 
   if (els.highlightsMeta) {
-    const q = query ? ` for "${query}"` : "";
-    els.highlightsMeta.textContent = `${items.length} football stories loaded${q}.`;
+    const counts = [];
+    if (newsItems.length) counts.push(`${newsItems.length} news stor${newsItems.length === 1 ? 'y' : 'ies'}`);
+    if (highlightItems.length) counts.push(`${highlightItems.length} highlight${highlightItems.length === 1 ? '' : 's'}`);
+    els.highlightsMeta.textContent = `${counts.join(' and ')} loaded${q}.`;
   }
 
-  const lead = items[0];
-  const trending = items.slice(1, 5);
-  const grid = items.slice(5, 17);
+  const lead = newsItems[0] || null;
+  const trending = newsItems.slice(1, 5);
 
   if (els.highlightsLead) {
-    els.highlightsLead.innerHTML = `
-      <article class="news-lead-article">
-        <a href="${escapeHtml(lead.url)}" target="_blank" rel="noopener noreferrer" class="news-lead-media">
-          <img src="${escapeHtml(lead.thumbnail)}" alt="${escapeHtml(lead.title)}" class="news-lead-image" />
-        </a>
-        <div class="news-lead-copy">
-          <div class="news-kicker">${escapeHtml(lead.competition || "Football")}</div>
-          <a href="${escapeHtml(lead.url)}" target="_blank" rel="noopener noreferrer" class="news-lead-title">${escapeHtml(lead.title)}</a>
-          <div class="muted news-lead-meta">${escapeHtml([lead.source, lead.publishedAt].filter(Boolean).join(" | "))}</div>
-        </div>
-      </article>
-    `;
+    if (!lead) {
+      els.highlightsLead.innerHTML = `<div class="empty-box">No football news found${q}.</div>`;
+    } else {
+      const image = getStoryImage(lead, 'news');
+      els.highlightsLead.innerHTML = `
+        <article class="news-lead-article">
+          <a href="${escapeHtml(lead.url)}" target="_blank" rel="noopener noreferrer" class="news-lead-media">
+            <img src="${escapeHtml(image)}" alt="${escapeHtml(lead.title)}" class="news-lead-image" onerror="this.onerror=null;this.src='${escapeHtml(getStoryImage({}, 'news'))}';" />
+          </a>
+          <div class="news-lead-copy">
+            <div class="news-kicker">${escapeHtml(lead.competition || 'Football News')}</div>
+            <a href="${escapeHtml(lead.url)}" target="_blank" rel="noopener noreferrer" class="news-lead-title">${escapeHtml(lead.title)}</a>
+            <div class="muted news-lead-meta">${escapeHtml([lead.source, lead.publishedAt].filter(Boolean).join(' | '))}</div>
+          </div>
+        </article>
+      `;
+    }
   }
 
   if (els.highlightsTrending) {
-    els.highlightsTrending.innerHTML = trending.map((item, index) => `
-      <article class="trending-story">
-        <span class="trending-rank">${index + 1}</span>
-        <div class="trending-copy">
-          <a href="${escapeHtml(item.url)}" target="_blank" rel="noopener noreferrer" class="trending-title">${escapeHtml(item.title)}</a>
-          <div class="muted">${escapeHtml([item.source, item.publishedAt].filter(Boolean).join(" | "))}</div>
-        </div>
-        <img src="${escapeHtml(item.thumbnail)}" alt="${escapeHtml(item.title)}" class="trending-thumb" />
-      </article>
-    `).join("");
+    if (!trending.length) {
+      els.highlightsTrending.innerHTML = `<div class="empty-box">No extra football news right now.</div>`;
+    } else {
+      els.highlightsTrending.innerHTML = trending.map((item, index) => {
+        const image = getStoryImage(item, 'news');
+        return `
+          <article class="trending-story">
+            <span class="trending-rank">${index + 1}</span>
+            <div class="trending-copy">
+              <a href="${escapeHtml(item.url)}" target="_blank" rel="noopener noreferrer" class="trending-title">${escapeHtml(item.title)}</a>
+              <div class="muted">${escapeHtml([item.source, item.publishedAt].filter(Boolean).join(' | '))}</div>
+            </div>
+            <img src="${escapeHtml(image)}" alt="${escapeHtml(item.title)}" class="trending-thumb" onerror="this.onerror=null;this.src='${escapeHtml(getStoryImage({}, 'news'))}';" />
+          </article>
+        `;
+      }).join('');
+    }
   }
 
-  const cards = (grid.length ? grid : items.slice(1, 9)).map((item) => `
-    <article class="video-card news-card">
-      <a href="${escapeHtml(item.url)}" target="_blank" rel="noopener noreferrer" class="news-card-media">
-        <img class="video-thumb news-card-thumb" src="${escapeHtml(item.thumbnail)}" alt="${escapeHtml(item.title)}" />
-      </a>
-      <div class="video-meta news-card-meta">
-        <div class="news-kicker">${escapeHtml(item.competition || "Football")}</div>
-        <a href="${escapeHtml(item.url)}" target="_blank" rel="noopener noreferrer" class="news-card-title">${escapeHtml(item.title)}</a>
-        <div class="muted">${escapeHtml([item.source, item.publishedAt].filter(Boolean).join(" | "))}</div>
-      </div>
-    </article>
-  `).join("");
+  const cardsSource = highlightItems.length ? highlightItems : buildHighlightFallbacks(query).map((item) => ({ ...item, kind: 'highlight' }));
+  els.highlightsList.innerHTML = cardsSource.map((item) => {
+    const image = getStoryImage(item, 'highlight');
+    return `
+      <article class="video-card news-card">
+        <a href="${escapeHtml(item.url)}" target="_blank" rel="noopener noreferrer" class="news-card-media">
+          <img class="video-thumb news-card-thumb" src="${escapeHtml(image)}" alt="${escapeHtml(item.title)}" onerror="this.onerror=null;this.src='${escapeHtml(getStoryImage({}, 'highlight'))}';" />
+        </a>
+        <div class="video-meta news-card-meta">
+          <div class="news-kicker">${escapeHtml(item.competition || 'Highlights')}</div>
+          <a href="${escapeHtml(item.url)}" target="_blank" rel="noopener noreferrer" class="news-card-title">${escapeHtml(item.title)}</a>
+          <div class="muted">${escapeHtml([item.source, item.publishedAt].filter(Boolean).join(' | '))}</div>
+        </div>
+      </article>
+    `;
+  }).join('');
 
-  els.highlightsList.innerHTML = cards;
-  animateListEntrance(els.highlightsList, ".video-card");
+  animateListEntrance(els.highlightsList, '.video-card');
 }
 
 function buildHighlightFallbacks(queryText = "") {
@@ -2036,6 +2087,11 @@ async function loadDailyFixtures(options = {}) {
         category: item.category || "Global Football",
         kickoff: formatKickoff(item.date, item.time)
       }));
+
+      if (!mapped.length) {
+        mapped = await loadClientFixtureFallback(isoDate);
+        if (mapped.length) sourceLabel = "Browser fallback";
+      }
     } catch (serviceErr) {
       mapped = await loadClientFixtureFallback(isoDate);
       if (!mapped.length) throw serviceErr;
