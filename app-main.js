@@ -41,7 +41,7 @@ const firebaseConfig = {
 
 const ADMIN_EMAIL = "ikshihab2002@gmail.com";
 const BKASH_PAYMENT_NUMBER = "01623729249";
-const BKASH_QR_IMAGE_URL = "assets/bkash-qr.png";
+const BKASH_QR_IMAGE_URL = "https://quickchart.io/qr?text=bKash%2001623729249&size=240";
 const CONTACT_PHONE = "01304204769";
 const CONTACT_EMAIL = "ikshihab2002@gmail.com";
 const CONTACT_FACEBOOK = "https://www.facebook.com/shihabb.zz/";
@@ -64,6 +64,7 @@ const state = {
   playerPage: "liveScoreSection",
   fixturesData: [],
   fixtureMode: "live",
+  fixtureLeague: "all",
   highlightsData: [],
   fixturesRefreshTimer: null,
   fixturesLastLoadedAt: 0
@@ -121,6 +122,7 @@ const els = {
   heroCancelBtn: $("heroCancelBtn"),
   heroSlotQty: $("heroSlotQty"),
   heroPaymentSelect: $("heroPaymentSelect"),
+  heroPaymentSwitch: $("heroPaymentSwitch"),
   heroFeePreview: $("heroFeePreview"),
   heroPaymentNotice: $("heroPaymentNotice"),
   heroDownloadBtn: $("heroDownloadBtn"),
@@ -174,8 +176,11 @@ const els = {
   mapSearchResults: $("mapSearchResults"),
   fixturesDate: $("fixturesDate"),
   fixturesList: $("fixturesList"),
+  fixturesLeagueRail: $("fixturesLeagueRail"),
   refreshFixturesBtn: $("refreshFixturesBtn"),
   highlightsList: $("highlightsList"),
+  highlightsLead: $("highlightsLead"),
+  highlightsTrending: $("highlightsTrending"),
   highlightsSearchInput: $("highlightsSearchInput"),
   highlightsSearchBtn: $("highlightsSearchBtn"),
   highlightsMeta: $("highlightsMeta"),
@@ -418,6 +423,109 @@ function initStaticUi() {
     els.bkashNumberLink.href = toWhatsAppUrl(BKASH_PAYMENT_NUMBER);
   }
 }
+function getUiIconSvg(name = "dot") {
+  const icons = {
+    menu: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M5 7h14M5 12h14M5 17h14"/></svg>',
+    user: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 20a6 6 0 0 0-12 0"/><circle cx="12" cy="8" r="4"/></svg>',
+    logout: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>',
+    home: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></svg>',
+    score: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 5h14v14H5z"/><path d="M9 9h6M9 15h6"/></svg>',
+    news: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h13a3 3 0 0 1 3 3v9H7a3 3 0 0 1-3-3V6z"/><path d="M8 10h8M8 14h5"/></svg>',
+    ticket: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9a2 2 0 0 0 0 6v3h16v-3a2 2 0 0 0 0-6V6H4v3z"/><path d="M12 6v12"/></svg>',
+    edit: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>',
+    info: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 10v6"/><path d="M12 7h.01"/></svg>',
+    help: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9.1 9a3 3 0 1 1 5.8 1c0 2-3 2-3 4"/><path d="M12 17h.01"/><circle cx="12" cy="12" r="9"/></svg>',
+    google: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12.2c0-.6-.05-1.17-.15-1.7H12v3.2h4.5a3.9 3.9 0 0 1-1.67 2.55v2.12H17.5c1.58-1.46 2.5-3.62 2.5-6.19Z"/><path d="M12 21c2.25 0 4.13-.75 5.5-2.03l-2.67-2.12c-.74.5-1.68.8-2.83.8-2.18 0-4.03-1.47-4.68-3.45H4.56v2.17A9 9 0 0 0 12 21Z"/><path d="M7.32 14.2A5.4 5.4 0 0 1 7 12c0-.76.12-1.5.32-2.2V7.63H4.56A9 9 0 0 0 3 12c0 1.45.35 2.82.98 4.03l3.34-1.83Z"/><path d="M12 6.35c1.22 0 2.3.42 3.16 1.23l2.37-2.37C16.12 3.9 14.25 3 12 3a9 9 0 0 0-7.44 4.37l2.76 2.17c.65-1.98 2.5-3.19 4.68-3.19Z"/></svg>',
+    search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="6"/><path d="m20 20-4.35-4.35"/></svg>',
+    refresh: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0 2 5.3"/><path d="M20 4v7h-7"/></svg>',
+    reserve: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>',
+    cancel: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>',
+    download: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v10"/><path d="m8 10 4 4 4-4"/><path d="M5 20h14"/></svg>',
+    location: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s7-4.8 7-11a7 7 0 1 0-14 0c0 6.2 7 11 7 11Z"/><circle cx="12" cy="10" r="2.5"/></svg>',
+    save: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4h11l3 3v13H5z"/><path d="M8 4v5h8"/><path d="M9 14h6"/></svg>',
+    close: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>',
+    lineup: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="7" r="2.5"/><circle cx="17" cy="7" r="2.5"/><circle cx="12" cy="16" r="2.5"/><path d="M7 9.5v3M17 9.5v3M12 13.5v-3"/></svg>',
+    mail: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7.5A2.5 2.5 0 0 1 5.5 5h13A2.5 2.5 0 0 1 21 7.5v9a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 16.5v-9Z"/><path d="m4 8 8 5 8-5"/></svg>',
+    phone: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6.6 3h3l1.2 4.2-1.8 1.8a15 15 0 0 0 6 6l1.8-1.8L21 14.4v3a2 2 0 0 1-2.2 2A17 17 0 0 1 4.6 5.2 2 2 0 0 1 6.6 3Z"/></svg>',
+    chat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.5 8.5 0 0 1-8.5 8.5H7l-4 3v-5.5A8.5 8.5 0 1 1 21 11.5Z"/></svg>'
+  };
+
+  return icons[name] || icons.info;
+}
+
+function applyInlineIcon(el, iconName, options = {}) {
+  if (!el) return;
+  const { mode = "prepend", wrapClass = "btn-with-icon" } = options;
+
+  if (mode === "replace") {
+    if (el.dataset.iconApplied === iconName) return;
+    el.innerHTML = getUiIconSvg(iconName);
+    el.dataset.iconApplied = iconName;
+    return;
+  }
+
+  if (el.querySelector(`.ui-icon[data-icon="${iconName}"]`)) return;
+  const icon = document.createElement("span");
+  icon.className = `ui-icon ui-icon-${mode}`;
+  icon.dataset.icon = iconName;
+  icon.setAttribute("aria-hidden", "true");
+  icon.innerHTML = getUiIconSvg(iconName);
+
+  if (wrapClass) el.classList.add(wrapClass);
+  if (mode === "append") el.append(icon);
+  else el.prepend(icon);
+}
+
+function injectUiIcons(root = document) {
+  const add = (selector, iconName, options = {}) => {
+    root.querySelectorAll(selector).forEach((el) => applyInlineIcon(el, iconName, options));
+  };
+
+  add('#profileBtn', 'user');
+  add('#logoutBtn', 'logout');
+  add('#moreMenuBtn', 'menu', { mode: 'replace', wrapClass: '' });
+  add('#authSubmitBtn', 'mail');
+  add('#googleBtn', 'google');
+  add('#heroBookBtn', 'reserve');
+  add('#heroCancelBtn', 'cancel');
+  add('#heroDownloadBtn', 'download');
+  add('#refreshFixturesBtn', 'refresh');
+  add('#highlightsSearchBtn', 'search');
+  add('#openMapPickerBtn', 'location');
+  add('#mapSearchBtn', 'search');
+  add('#confirmMapPickerBtn', 'location');
+  add('#bkashContinueBtn', 'save');
+  add('#downloadReceiptBtn', 'download');
+  add('#closeProfileModal, #closeMapPickerModal, #closeBkashModal, #closeReceiptModal, #closeFixtureDetailModal', 'close');
+  add('#contactWhatsappLinkPlayer', 'chat');
+  add('#contactEmailLinkPlayer', 'mail');
+  add('#contactFacebookLinkPlayer', 'info');
+  add('.fixture-detail-btn', 'score');
+  add('.fixture-lineup-btn', 'lineup');
+  add('.toggle-match-btn', 'refresh');
+  add('.edit-announcement-btn', 'edit');
+  add('.delete-announcement-btn', 'cancel');
+
+  root.querySelectorAll('.more-menu-item').forEach((btn) => {
+    const target = String(btn.dataset.target || '');
+    const iconName = {
+      liveScoreSection: 'home',
+      fixturesSection: 'score',
+      highlightsSection: 'news',
+      bookingsSection: 'ticket',
+      profileSection: 'edit',
+      aboutSection: 'info',
+      quickContactSection: 'help'
+    }[target] || 'info';
+
+    const iconWrap = btn.querySelector('.menu-item-icon');
+    if (iconWrap && iconWrap.dataset.iconApplied !== iconName) {
+      iconWrap.innerHTML = getUiIconSvg(iconName);
+      iconWrap.dataset.iconApplied = iconName;
+    }
+  });
+}
+
 function stopFixturesAutoRefresh() {
   if (state.fixturesRefreshTimer) {
     clearInterval(state.fixturesRefreshTimer);
@@ -741,21 +849,48 @@ function getRequestedSlots() {
   return clamped;
 }
 
-function getPaymentDetails(paymentMethod, totalFee) {
+function getPaymentDetails(paymentMethod, totalFee, options = {}) {
   const method = String(paymentMethod || "On-spot");
   const total = Math.max(Number(totalFee || 0), 0);
-  const isOnSpot = method.toLowerCase() === "on-spot";
+  const normalizedMethod = method.toLowerCase();
+  const normalizedStatus = String(options.paymentStatus || "").toLowerCase();
+  const isOnSpot = normalizedMethod === "on-spot";
+  const isBkash = normalizedMethod === "bkash";
+  const isPaid = normalizedStatus === "paid" || options.confirmed === true;
+
+  if (isOnSpot) {
+    return {
+      method,
+      status: "Due",
+      dueAmount: total,
+      paidAmount: 0,
+      methodLabel: "On-spot"
+    };
+  }
+
+  if (isBkash) {
+    return {
+      method,
+      status: isPaid ? "Paid" : "Pending",
+      dueAmount: isPaid ? 0 : total,
+      paidAmount: isPaid ? total : 0,
+      methodLabel: "bKash"
+    };
+  }
+
   return {
     method,
-    status: isOnSpot ? "Due" : "Paid",
-    dueAmount: isOnSpot ? total : 0,
-    paidAmount: isOnSpot ? 0 : total,
-    methodLabel: isOnSpot ? "On-spot" : "bKash"
+    status: isPaid ? "Paid" : "Pending",
+    dueAmount: isPaid ? 0 : total,
+    paidAmount: isPaid ? total : 0,
+    methodLabel: method || "Payment"
   };
 }
 function getStoredPaymentDetails(item = {}) {
   const total = Math.max(Number(item.totalFee || 0), 0);
-  const base = getPaymentDetails(item.paymentMethod || "On-spot", total);
+  const base = getPaymentDetails(item.paymentMethod || "On-spot", total, {
+    paymentStatus: item.paymentStatus || ""
+  });
   const hasDue = Number.isFinite(Number(item.dueAmount));
   const hasPaid = Number.isFinite(Number(item.paidAmount));
   return {
@@ -832,6 +967,29 @@ function playBookingAnimation() {
   setTimeout(() => card.classList.remove("booking-success"), 700);
 }
 
+function renderPaymentSwitch() {
+  if (!els.heroPaymentSwitch || !els.heroPaymentSelect) return;
+  const current = String(els.heroPaymentSelect.value || "On-spot");
+  els.heroPaymentSwitch.querySelectorAll(".payment-switch-btn").forEach((btn) => {
+    const active = String(btn.dataset.payment || "") === current;
+    btn.classList.toggle("active", active);
+    btn.setAttribute("aria-pressed", active ? "true" : "false");
+  });
+}
+
+function initPaymentSwitch() {
+  if (!els.heroPaymentSwitch || !els.heroPaymentSelect) return;
+  els.heroPaymentSwitch.querySelectorAll(".payment-switch-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const next = String(btn.dataset.payment || "On-spot");
+      els.heroPaymentSelect.value = next;
+      renderPaymentSwitch();
+      refreshBookingPreview();
+    });
+  });
+  renderPaymentSwitch();
+}
+
 function refreshBookingPreview() {
   toggleExtraNamesInput();
   if (!els.heroFeePreview) return;
@@ -840,14 +998,17 @@ function refreshBookingPreview() {
   const total = fee * qty;
   const feeText = Number.isFinite(fee) ? `BDT ${total}` : "Set by admin";
   const paymentMethod = String(els.heroPaymentSelect?.value || "On-spot");
-  const pay = getPaymentDetails(paymentMethod, total);
+  renderPaymentSwitch();
+  const pay = getPaymentDetails(paymentMethod, total, {
+    paymentStatus: paymentMethod.toLowerCase() === "bkash" ? "pending" : "due"
+  });
   const othersRequired = Math.max(qty - 1, 0);
   const namesText = othersRequired > 0
     ? ` | Add ${othersRequired} additional player name${othersRequired > 1 ? "s" : ""}`
     : "";
   els.heroFeePreview.textContent = `${qty} slot${qty > 1 ? "s" : ""} selected | Total: ${feeText}${namesText} | Status: ${pay.status}`;
   if (els.heroPaymentNotice) {
-    els.heroPaymentNotice.textContent = `Pay now: BDT ${pay.paidAmount} | Due: BDT ${pay.dueAmount} | Amount may change if slots/payment method change.`;
+    els.heroPaymentNotice.textContent = paymentMethod.toLowerCase() === "bkash" ? `bKash stays pending until you confirm payment with your last 3 digits. Payable now: BDT ${total}.` : `Pay now: BDT ${pay.paidAmount} | Due: BDT ${pay.dueAmount} | Amount may change if slots/payment method change.`;
   }
 }
 
@@ -1081,6 +1242,76 @@ function filterFixturesByMode(fixtures = []) {
   return fixtures.filter((item) => normalizeFixtureStatus(item) === state.fixtureMode);
 }
 
+function getFixtureLeagueKey(item = {}) {
+  return `${item.leagueId || "x"}::${item.league || "Competition"}`;
+}
+
+function getFixtureLeagueOptions(fixtures = []) {
+  const map = new Map();
+  fixtures.forEach((item) => {
+    const key = getFixtureLeagueKey(item);
+    const current = map.get(key) || { key, count: 0, item };
+    current.count += 1;
+    current.item = current.item || item;
+    map.set(key, current);
+  });
+
+  return Array.from(map.values())
+    .sort((a, b) => {
+      const priorityDiff = leaguePriority(a.item?.league || "") - leaguePriority(b.item?.league || "");
+      if (priorityDiff !== 0) return priorityDiff;
+      if (b.count !== a.count) return b.count - a.count;
+      return String(a.item?.league || "").localeCompare(String(b.item?.league || ""));
+    })
+    .slice(0, 12);
+}
+
+function renderFixtureLeagueRail(fixtures = []) {
+  if (!els.fixturesLeagueRail) return;
+
+  const options = getFixtureLeagueOptions(fixtures);
+  if (state.fixtureLeague !== "all" && !options.some((option) => option.key === state.fixtureLeague)) {
+    state.fixtureLeague = "all";
+  }
+
+  const allButton = `
+    <button class="league-rail-btn${state.fixtureLeague === "all" ? " active" : ""}" type="button" data-leaguekey="all">
+      <span class="league-rail-icon">All</span>
+      <span class="league-rail-copy">
+        <strong>All leagues</strong>
+        <small>${fixtures.length} matches</small>
+      </span>
+    </button>
+  `;
+
+  const items = options.map(({ key, count, item }) => {
+    const meta = getCompetitionMeta(item?.league, item?.leagueId, item?.category);
+    const active = state.fixtureLeague === key;
+    return `
+      <button class="league-rail-btn${active ? " active" : ""}" type="button" data-leaguekey="${escapeHtml(key)}">
+        <img class="league-rail-logo" src="${escapeHtml(meta.logo)}" alt="${escapeHtml(meta.name)} logo" />
+        <span class="league-rail-copy">
+          <strong>${escapeHtml(meta.name)}</strong>
+          <small>${count} fixture${count > 1 ? "s" : ""}</small>
+        </span>
+      </button>
+    `;
+  }).join("");
+
+  els.fixturesLeagueRail.innerHTML = allButton + items;
+  els.fixturesLeagueRail.querySelectorAll(".league-rail-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      state.fixtureLeague = String(btn.dataset.leaguekey || "all");
+      renderFixtures(state.fixturesData || []);
+    });
+  });
+}
+
+function filterFixturesByLeague(fixtures = []) {
+  if (state.fixtureLeague === "all") return fixtures;
+  return fixtures.filter((item) => getFixtureLeagueKey(item) === state.fixtureLeague);
+}
+
 function setFixtureMode(mode) {
   const allowed = new Set(["live", "upcoming", "results", "all"]);
   state.fixtureMode = allowed.has(mode) ? mode : "live";
@@ -1098,8 +1329,9 @@ function renderFixtures(fixtures = []) {
   if (!els.fixturesList) return;
   state.fixturesData = Array.isArray(fixtures) ? fixtures : [];
   renderFixtureTabs();
+  renderFixtureLeagueRail(state.fixturesData);
 
-  const scoped = filterFixturesByMode(state.fixturesData);
+  const scoped = filterFixturesByLeague(filterFixturesByMode(state.fixturesData));
   if (!scoped.length) {
     const label = state.fixtureMode === "all" ? "matches" : state.fixtureMode;
     els.fixturesList.innerHTML = `<div class="empty-box">No ${label} matches are available from the live match service right now.</div>`;
@@ -1107,13 +1339,19 @@ function renderFixtures(fixtures = []) {
   }
 
   const groupedByLeague = scoped.reduce((acc, item) => {
-    const key = `${item.leagueId || "x"}::${item.league || "Competition"}`;
+    const key = getFixtureLeagueKey(item);
     if (!acc[key]) acc[key] = [];
     acc[key].push(item);
     return acc;
   }, {});
 
-  const html = Object.values(groupedByLeague).map((list) => {
+  const orderedGroups = Object.values(groupedByLeague).sort((a, b) => {
+    const leagueDiff = leaguePriority(a[0]?.league || "") - leaguePriority(b[0]?.league || "");
+    if (leagueDiff !== 0) return leagueDiff;
+    return String(a[0]?.league || "").localeCompare(String(b[0]?.league || ""));
+  });
+
+  const html = orderedGroups.map((list) => {
     const first = list[0] || {};
     if (first.leagueLogo && first.leagueId) LEAGUE_LOGO_CACHE.set(String(first.leagueId), first.leagueLogo);
     const meta = getCompetitionMeta(first.league, first.leagueId, first.category);
@@ -1123,42 +1361,54 @@ function renderFixtures(fixtures = []) {
       const score = (Number.isFinite(Number(item.homeScore)) && Number.isFinite(Number(item.awayScore)))
         ? `${item.homeScore} - ${item.awayScore}`
         : (kind === "live" ? "LIVE" : "vs");
+      const statusChipClass = kind === "upcoming" ? "upcoming" : kind;
+      const statusChip = kind === "live" ? (item.status || "LIVE") : (kind === "results" ? (item.status || "FT") : "UPCOMING");
       const note = kind === "results" ? (item.status || "FT") : (item.kickoff || "TBD");
-      const detail = [item.venue, item.round || item.season, item.status].filter(Boolean).join(" | ");
+      const detail = [item.round || item.season, item.venue].filter(Boolean).join(" | ");
       const noteText = detail ? `${note} | ${detail}` : note;
-      const homeBadge = escapeHtml(item.homeBadge || `https://placehold.co/56x56/0b2d26/e8fff3?text=${encodeURIComponent((item.home || "H").slice(0,2).toUpperCase())}`);
-      const awayBadge = escapeHtml(item.awayBadge || `https://placehold.co/56x56/0b2d26/e8fff3?text=${encodeURIComponent((item.away || "A").slice(0,2).toUpperCase())}`);
+      const homeBadge = escapeHtml(item.homeBadge || `https://placehold.co/56x56/111827/f8fafc?text=${encodeURIComponent((item.home || "H").slice(0, 2).toUpperCase())}`);
+      const awayBadge = escapeHtml(item.awayBadge || `https://placehold.co/56x56/111827/f8fafc?text=${encodeURIComponent((item.away || "A").slice(0, 2).toUpperCase())}`);
 
       return `
-        <article class="sofa-row ${kind}">
-          <div class="sofa-team">
-            <img src="${homeBadge}" alt="${escapeHtml(item.home)}" />
-            <span>${escapeHtml(item.home)}</span>
+        <article class="sofa-row editorial-row ${kind}">
+          <div class="editorial-row-top">
+            <span class="match-state-pill ${statusChipClass}">${escapeHtml(statusChip)}</span>
+            <span class="editorial-row-note">${escapeHtml(noteText)}</span>
           </div>
-          <div class="sofa-score-wrap">
-            <div class="sofa-score">${escapeHtml(String(score))}</div>
-            <div class="sofa-note">${escapeHtml(noteText)}</div>
+          <div class="editorial-match-grid">
+            <div class="sofa-team">
+              <img src="${homeBadge}" alt="${escapeHtml(item.home)}" />
+              <span>${escapeHtml(item.home)}</span>
+            </div>
+            <div class="sofa-score-wrap">
+              <div class="sofa-score">${escapeHtml(String(score))}</div>
+            </div>
+            <div class="sofa-team align-right">
+              <span>${escapeHtml(item.away)}</span>
+              <img src="${awayBadge}" alt="${escapeHtml(item.away)}" />
+            </div>
           </div>
-          <div class="sofa-team align-right">
-            <span>${escapeHtml(item.away)}</span>
-            <img src="${awayBadge}" alt="${escapeHtml(item.away)}" />
-          </div>
-          <div class="fixture-actions-row">
+          <div class="fixture-actions-row fixture-actions-inline">
             <button class="secondary-btn fixture-detail-btn" type="button" data-fixtureid="${escapeHtml(String(item.id || ""))}">Match center</button>
             <button class="secondary-btn fixture-lineup-btn" type="button" data-fixtureid="${escapeHtml(String(item.id || ""))}">Lineups</button>
-            <div class="fixture-lineup-box hidden" id="lineup-${escapeHtml(String(item.id || ""))}"></div>
           </div>
+          <div class="fixture-lineup-box hidden" id="lineup-${escapeHtml(String(item.id || ""))}"></div>
         </article>
       `;
     }).join("");
 
     return `
-      <section class="fixture-group sofa-league-group">
-        <div class="fixture-group-head">
-          <img class="fixture-league-logo" src="${escapeHtml(meta.logo)}" alt="${escapeHtml(meta.name)} logo" />
-          <h4>${escapeHtml(meta.name)}</h4>
+      <section class="fixture-group sofa-league-group editorial-league-group">
+        <div class="fixture-group-head editorial-group-head">
+          <div class="editorial-group-title">
+            <img class="fixture-league-logo" src="${escapeHtml(meta.logo)}" alt="${escapeHtml(meta.name)} logo" />
+            <div>
+              <h4>${escapeHtml(meta.name)}</h4>
+              <div class="muted">${list.length} fixture${list.length > 1 ? "s" : ""}</div>
+            </div>
+          </div>
         </div>
-        <div class="sofa-list">${rows}</div>
+        <div class="sofa-list editorial-sofa-list">${rows}</div>
       </section>
     `;
   }).join("");
@@ -1170,6 +1420,7 @@ function renderFixtures(fixtures = []) {
   els.fixturesList.querySelectorAll(".fixture-lineup-btn").forEach((btn) => {
     btn.addEventListener("click", () => loadFixtureLineup(String(btn.dataset.fixtureid || ""), btn));
   });
+  injectUiIcons(els.fixturesList);
   animateListEntrance(els.fixturesList, ".sofa-row");
 }
 async function loadFixtureLineup(fixtureId, triggerBtn) {
@@ -1346,28 +1597,68 @@ function renderHighlights(items = [], query = "") {
 
   if (!items.length) {
     const q = query ? ` for "${escapeHtml(query)}"` : "";
-    els.highlightsList.innerHTML = `<div class="empty-box">No highlight videos found${q}.</div>`;
+    if (els.highlightsLead) {
+      els.highlightsLead.innerHTML = `<div class="empty-box">No football stories found${q}.</div>`;
+    }
+    if (els.highlightsTrending) {
+      els.highlightsTrending.innerHTML = "";
+    }
+    els.highlightsList.innerHTML = `<div class="empty-box">No football stories found${q}.</div>`;
     if (els.highlightsMeta) els.highlightsMeta.textContent = "";
     return;
   }
 
   if (els.highlightsMeta) {
     const q = query ? ` for "${query}"` : "";
-    els.highlightsMeta.textContent = `${items.length} videos loaded${q}. Sources: ScoreBat + TheSportsDB + YouTube shortcuts.`;
+    els.highlightsMeta.textContent = `${items.length} football stories loaded${q}.`;
   }
 
-  els.highlightsList.innerHTML = items.map((item) => `
-    <article class="video-card">
-      <a href="${escapeHtml(item.url)}" target="_blank" rel="noopener noreferrer" class="video-thumb-wrap">
-        <img class="video-thumb" src="${escapeHtml(item.thumbnail)}" alt="${escapeHtml(item.title)}" />
+  const lead = items[0];
+  const trending = items.slice(1, 5);
+  const grid = items.slice(5, 17);
+
+  if (els.highlightsLead) {
+    els.highlightsLead.innerHTML = `
+      <article class="news-lead-article">
+        <a href="${escapeHtml(lead.url)}" target="_blank" rel="noopener noreferrer" class="news-lead-media">
+          <img src="${escapeHtml(lead.thumbnail)}" alt="${escapeHtml(lead.title)}" class="news-lead-image" />
+        </a>
+        <div class="news-lead-copy">
+          <div class="news-kicker">${escapeHtml(lead.competition || "Football")}</div>
+          <a href="${escapeHtml(lead.url)}" target="_blank" rel="noopener noreferrer" class="news-lead-title">${escapeHtml(lead.title)}</a>
+          <div class="muted news-lead-meta">${escapeHtml([lead.source, lead.publishedAt].filter(Boolean).join(" | "))}</div>
+        </div>
+      </article>
+    `;
+  }
+
+  if (els.highlightsTrending) {
+    els.highlightsTrending.innerHTML = trending.map((item, index) => `
+      <article class="trending-story">
+        <span class="trending-rank">${index + 1}</span>
+        <div class="trending-copy">
+          <a href="${escapeHtml(item.url)}" target="_blank" rel="noopener noreferrer" class="trending-title">${escapeHtml(item.title)}</a>
+          <div class="muted">${escapeHtml([item.source, item.publishedAt].filter(Boolean).join(" | "))}</div>
+        </div>
+        <img src="${escapeHtml(item.thumbnail)}" alt="${escapeHtml(item.title)}" class="trending-thumb" />
+      </article>
+    `).join("");
+  }
+
+  const cards = (grid.length ? grid : items.slice(1, 9)).map((item) => `
+    <article class="video-card news-card">
+      <a href="${escapeHtml(item.url)}" target="_blank" rel="noopener noreferrer" class="news-card-media">
+        <img class="video-thumb news-card-thumb" src="${escapeHtml(item.thumbnail)}" alt="${escapeHtml(item.title)}" />
       </a>
-      <div class="video-meta">
-        <strong>${escapeHtml(item.title)}</strong>
-        <div class="muted">${escapeHtml(item.competition || "Football")}</div>
+      <div class="video-meta news-card-meta">
+        <div class="news-kicker">${escapeHtml(item.competition || "Football")}</div>
+        <a href="${escapeHtml(item.url)}" target="_blank" rel="noopener noreferrer" class="news-card-title">${escapeHtml(item.title)}</a>
         <div class="muted">${escapeHtml([item.source, item.publishedAt].filter(Boolean).join(" | "))}</div>
       </div>
     </article>
   `).join("");
+
+  els.highlightsList.innerHTML = cards;
   animateListEntrance(els.highlightsList, ".video-card");
 }
 
@@ -1526,7 +1817,7 @@ async function loadHighlights(queryText = "") {
     const shortlist = deduped.slice(0, maxItems);
     if (!shortlist.length) {
       renderHighlights(buildHighlightFallbacks(queryText), queryText);
-      if (els.highlightsMeta) els.highlightsMeta.textContent = "Showing YouTube search shortcuts.";
+      if (els.highlightsMeta) els.highlightsMeta.textContent = "Showing fallback football stories.";
       return;
     }
 
@@ -1534,7 +1825,7 @@ async function loadHighlights(queryText = "") {
   } catch (err) {
     console.error(err);
     renderHighlights(buildHighlightFallbacks(queryText), queryText);
-    if (els.highlightsMeta) els.highlightsMeta.textContent = "Video API unavailable. Showing YouTube search shortcuts.";
+    if (els.highlightsMeta) els.highlightsMeta.textContent = "Football story service unavailable. Showing fallback stories.";
   } finally {
     setButtonLoading(els.highlightsSearchBtn, false);
   }
@@ -1622,6 +1913,7 @@ function openBkashModal() {
   const fee = Number(state.featuredMatch?.slotFee || 0);
   const total = Math.max(Number(fee * qty), 0);
   if (els.bkashPayableText) els.bkashPayableText.textContent = `Payable now: BDT ${total} (amount may change if slots update)`;
+  if (els.bkashQrImage) els.bkashQrImage.src = BKASH_QR_IMAGE_URL;
   els.bkashModal?.classList.remove("hidden");
 }
 
@@ -2196,7 +2488,7 @@ function renderMyBookings(items = []) {
     const status = escapeHtml(String(item.matchStatus || item.status || "booked").toUpperCase());
     const slots = Math.max(Number(item.slots || 1), 1);
     const totalFee = Number(item.totalFee || 0);
-    const pay = getPaymentDetails(item.paymentMethod || "On-spot", totalFee);
+    const pay = getStoredPaymentDetails(item);
     return `
       <div class="announcement-card">
         <strong>${venue}</strong>
@@ -2319,6 +2611,7 @@ function updateHero(match, bookings) {
     if (Number(els.heroSlotQty.value) < 1) els.heroSlotQty.value = "1";
   }
   refreshBookingPreview();
+  injectUiIcons();
 }
 
 function listenBookingsForMatch(matchId) {
@@ -2374,6 +2667,7 @@ function listenFeaturedMatches() {
       els.heroCancelBtn.disabled = true;
       if (els.heroSlotQty) els.heroSlotQty.value = "1";
       refreshBookingPreview();
+  injectUiIcons();
       return;
     }
 
@@ -2509,15 +2803,19 @@ async function bookMatchDirect({ bkashConfirmed = false, bkashLast3 = "" } = {})
     const unitFee = Number(match.slotFee || 0);
     const totalFee = unitFee * newSlots;
     const p = state.userProfile || {};
+    const bkashPaid = selectedPayment === "bKash" && bkashConfirmed && /^\d{3}$/.test(String(bkashLast3 || ""));
+    const paymentStatus = selectedPayment === "On-spot" ? "due" : (bkashPaid ? "paid" : "pending");
+    const dueAmount = paymentStatus === "paid" ? 0 : totalFee;
+    const paidAmount = paymentStatus === "paid" ? totalFee : 0;
 
     await setDoc(bookingRef, {
       userId: user.uid,
       email: user.email || "",
       name: p.name || user.displayName || user.email?.split("@")[0] || "Player",
       paymentMethod: selectedPayment,
-      paymentStatus: selectedPayment === "On-spot" ? "due" : "paid",
-      dueAmount: selectedPayment === "On-spot" ? totalFee : 0,
-      paidAmount: selectedPayment === "On-spot" ? 0 : totalFee,
+      paymentStatus,
+      dueAmount,
+      paidAmount,
       bkashLast3: selectedPayment === "bKash" ? String(bkashLast3 || existingData?.bkashLast3 || "") : "",
       slotFee: unitFee,
       slots: newSlots,
@@ -2532,9 +2830,9 @@ async function bookMatchDirect({ bkashConfirmed = false, bkashLast3 = "" } = {})
       targetName: p.name || user.displayName || "",
       targetEmail: user.email || "",
       paymentMethod: selectedPayment,
-      paymentStatus: selectedPayment === "On-spot" ? "due" : "paid",
-      dueAmount: selectedPayment === "On-spot" ? totalFee : 0,
-      paidAmount: selectedPayment === "On-spot" ? 0 : totalFee,
+      paymentStatus,
+      dueAmount,
+      paidAmount,
       slotFee: unitFee,
       slotsAdded: requestedSlots,
       totalSlotsForUser: newSlots,
@@ -2549,6 +2847,7 @@ async function bookMatchDirect({ bkashConfirmed = false, bkashLast3 = "" } = {})
     if (els.heroSlotQty) els.heroSlotQty.value = "1";
     renderExtraPlayerFields();
     refreshBookingPreview();
+  injectUiIcons();
     openReceiptModal({
       venue: match.location || "Venue",
       when: formatMatchDate(match.date, match.time),
@@ -2557,8 +2856,8 @@ async function bookMatchDirect({ bkashConfirmed = false, bkashLast3 = "" } = {})
       totalFee,
       payment: selectedPayment,
       last3: selectedPayment === "bKash" ? String(bkashLast3 || "") : "",
-      paidAmount: selectedPayment === "On-spot" ? 0 : totalFee,
-      dueAmount: selectedPayment === "On-spot" ? totalFee : 0
+      paidAmount,
+      dueAmount
     });
   } catch (err) {
     console.error(err);
@@ -2581,7 +2880,14 @@ async function cancelBookingDirect() {
     }
     const bookingRef = doc(db, "matches", match.id, "bookings", user.uid);
     const bookingSnap = await getDoc(bookingRef);
-    const booking = bookingSnap.exists() ? bookingSnap.data() : {};
+    if (!bookingSnap.exists()) {
+      showToast("No active booking found.");
+      return;
+    }
+
+    const booking = bookingSnap.data() || {};
+    const confirmed = window.confirm(`Cancel your booking for ${match.location || "this match"}? This cannot be undone.`);
+    if (!confirmed) return;
 
     await deleteDoc(bookingRef);
 
@@ -2879,8 +3185,10 @@ initStaticUi();
 initMotionUi();
 initMoreMenu();
 initFixtureTabs();
+initPaymentSwitch();
 authUiMode("login");
 refreshBookingPreview();
+  injectUiIcons();
 
 onAuthStateChanged(auth, async (user) => {
   stopLiveListeners();

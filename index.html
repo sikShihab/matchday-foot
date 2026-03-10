@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
@@ -170,7 +170,11 @@
               <button id="heroBookBtn" class="primary-btn" type="button">Reserve slot</button>
               <button id="heroCancelBtn" class="secondary-btn" type="button">Cancel slot</button>
               <input id="heroSlotQty" class="select-input" type="number" min="1" max="4" value="1" />
-              <select id="heroPaymentSelect" class="select-input">
+              <div id="heroPaymentSwitch" class="payment-switch" role="tablist" aria-label="Payment method">
+                <button class="payment-switch-btn active" type="button" data-payment="On-spot">On-spot</button>
+                <button class="payment-switch-btn" type="button" data-payment="bKash">bKash</button>
+              </div>
+              <select id="heroPaymentSelect" class="select-input payment-select-native" aria-hidden="true" tabindex="-1">
                 <option value="On-spot">On-spot</option>
                 <option value="bKash">bKash</option>
               </select>
@@ -231,33 +235,62 @@
         <div id="myBookingsList" class="stack-list"></div>
       </section>
 
-      <section id="fixturesSection" class="panel-card fixtures-panel">
-        <div class="section-head">
+      <section id="fixturesSection" class="panel-card fixtures-panel fixtures-panel-immersive">
+        <div class="section-head section-head-split">
           <div>
             <div class="panel-label">Live football</div>
             <h3>Live Soccer Center</h3>
           </div>
-          <button id="refreshFixturesBtn" class="secondary-btn" type="button">Refresh</button>
         </div>
-        <div class="fixture-tabs">
-          <button id="fixtureTabLive" class="chip-tab active" type="button">Live</button>
-          <button id="fixtureTabUpcoming" class="chip-tab" type="button">Upcoming</button>
-          <button id="fixtureTabResults" class="chip-tab" type="button">Results</button>
-          <button id="fixtureTabAll" class="chip-tab" type="button">All</button>
+        <div class="fixtures-shell">
+          <aside class="fixtures-rail">
+            <div class="fixtures-rail-head">
+              <div class="panel-label">Top leagues</div>
+              <div class="muted">Focus the board by competition</div>
+            </div>
+            <div id="fixturesLeagueRail" class="fixtures-league-rail"></div>
+          </aside>
+          <div class="fixtures-stage">
+            <div class="fixtures-toolbar">
+              <div class="fixture-tabs">
+                <button id="fixtureTabLive" class="chip-tab active" type="button">Live</button>
+                <button id="fixtureTabUpcoming" class="chip-tab" type="button">Upcoming</button>
+                <button id="fixtureTabResults" class="chip-tab" type="button">Results</button>
+                <button id="fixtureTabAll" class="chip-tab" type="button">All</button>
+              </div>
+              <div class="fixtures-toolbar-meta">
+                <div id="fixturesDate" class="muted fixtures-date-inline"></div>
+                <button id="refreshFixturesBtn" class="secondary-btn" type="button">Refresh</button>
+              </div>
+            </div>
+            <div id="fixturesList" class="fixtures-list fixtures-editorial-list"></div>
+          </div>
         </div>
-        <div id="fixturesDate" class="muted"></div>
-        <div id="fixturesList" class="fixtures-list"></div>
       </section>
 
-      <section id="highlightsSection" class="panel-card highlights-panel">
-        <div class="panel-label">Watch zone</div>
-        <h3>Football Highlight Search</h3>
-        <div class="highlight-search-row">
-          <input id="highlightsSearchInput" type="text" placeholder="Search team, league, match..." />
-          <button id="highlightsSearchBtn" class="secondary-btn" type="button">Search</button>
+      <section id="highlightsSection" class="panel-card highlights-panel news-panel">
+        <div class="section-head section-head-split news-head">
+          <div>
+            <div class="panel-label">Matchday journal</div>
+            <h3>Football News Desk</h3>
+          </div>
+          <div class="highlight-search-row news-search-row">
+            <input id="highlightsSearchInput" type="text" placeholder="Search team, league, match..." />
+            <button id="highlightsSearchBtn" class="secondary-btn" type="button">Search</button>
+          </div>
         </div>
-        <div id="highlightsMeta" class="muted"></div>
-        <div id="highlightsList" class="video-grid"></div>
+        <div id="highlightsMeta" class="muted news-meta"></div>
+        <div class="news-shell">
+          <div id="highlightsLead" class="news-lead-card"></div>
+          <aside class="news-trending-panel">
+            <div class="news-trending-head">
+              <div class="panel-label">Trending</div>
+              <strong>Matchday pulse</strong>
+            </div>
+            <div id="highlightsTrending" class="news-trending-list"></div>
+          </aside>
+        </div>
+        <div id="highlightsList" class="news-grid"></div>
       </section>
 
       <section id="aboutSection" class="panel-card info-section">
