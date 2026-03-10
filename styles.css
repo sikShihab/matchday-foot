@@ -2340,6 +2340,18 @@ button,
   background: rgba(119, 255, 159, 0.08);
 }
 
+.league-rail-btn.featured {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.league-rail-btn .league-rail-copy small {
+  color: rgba(232, 243, 255, 0.72);
+}
+
+.league-rail-btn.featured .league-rail-copy small {
+  color: rgba(149, 255, 187, 0.82);
+}
+
 .league-rail-logo,
 .league-rail-icon {
   width: 40px;

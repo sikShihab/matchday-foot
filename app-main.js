@@ -64,6 +64,7 @@ const state = {
   myBookingsUnsub: null,
   playerPage: "liveScoreSection",
   fixturesData: [],
+  fixtureCompetitionMeta: [],
   fixtureMode: "all",
   fixtureLeague: "all",
   highlightsData: [],
@@ -229,36 +230,49 @@ let adminMap = null;
 let adminMapMarker = null;
 const DEFAULT_MAP_POINT = { lat: 23.8103, lng: 90.4125 };
 const COMPETITION_CATALOG = [
+  { category: "Top Leagues", name: "UEFA Champions League" },
+  { category: "Top Leagues", name: "Premier League" },
+  { category: "Top Leagues", name: "LaLiga" },
+  { category: "Top Leagues", name: "Serie A" },
+  { category: "Top Leagues", name: "Bundesliga" },
+  { category: "Top Leagues", name: "Ligue 1" },
+  { category: "Top Leagues", name: "FA Cup" },
+  { category: "Top Leagues", name: "UEFA Europa League" },
+  { category: "Top Leagues", name: "Copa del Rey" },
+  { category: "Top Leagues", name: "AFC Champions League" },
+  { category: "Top Leagues", name: "Bangladesh Premier League" },
   { category: "Major International & Club Tournaments", name: "FIFA World Cup" },
-  { category: "Major International & Club Tournaments", name: "UEFA Champions League" },
-  { category: "Major International & Club Tournaments", name: "Copa Libertadores" },
-  { category: "Major International & Club Tournaments", name: "UEFA Europa League" },
   { category: "Major International & Club Tournaments", name: "UEFA European Championship" },
   { category: "Major International & Club Tournaments", name: "Copa America" },
-  { category: "Major International & Club Tournaments", name: "AFC Champions League" },
+  { category: "Major International & Club Tournaments", name: "Copa Libertadores" },
   { category: "Major International & Club Tournaments", name: "Concacaf Champions Cup" },
-  { category: "Cup Competitions", name: "FA Cup" },
   { category: "Cup Competitions", name: "English League Cup" },
-  { category: "Cup Competitions", name: "Copa del Rey" },
   { category: "Women's Football", name: "Women's Super League" },
   { category: "Women's Football", name: "National Women's Soccer League" },
-  { category: "Women's Football", name: "UEFA Women's Champions League" },
-  { category: "Bangladesh Football", name: "Bangladesh Premier League" }
+  { category: "Women's Football", name: "UEFA Women's Champions League" }
 ];
 
 const FALLBACK_COMPETITIONS = [
+  { id: "4480", name: "UEFA Champions League", category: "Top Leagues" },
+  { id: "4328", name: "Premier League", category: "Top Leagues" },
+  { id: "4335", name: "LaLiga", category: "Top Leagues" },
+  { id: "4332", name: "Serie A", category: "Top Leagues" },
+  { id: "4331", name: "Bundesliga", category: "Top Leagues" },
+  { id: "4334", name: "Ligue 1", category: "Top Leagues" },
+  { id: "4370", name: "FA Cup", category: "Top Leagues" },
+  { id: "4481", name: "UEFA Europa League", category: "Top Leagues" },
+  { id: "4396", name: "Copa del Rey", category: "Top Leagues" },
+  { id: "4487", name: "AFC Champions League", category: "Top Leagues" },
+  { id: "4829", name: "Bangladesh Premier League", category: "Top Leagues" },
   { id: "4391", name: "FIFA World Cup", category: "Major International & Club Tournaments" },
-  { id: "4480", name: "UEFA Champions League", category: "Major International & Club Tournaments" },
-  { id: "4346", name: "Copa Libertadores", category: "Major International & Club Tournaments" },
-  { id: "4481", name: "UEFA Europa League", category: "Major International & Club Tournaments" },
   { id: "4756", name: "UEFA European Championship", category: "Major International & Club Tournaments" },
   { id: "4429", name: "Copa America", category: "Major International & Club Tournaments" },
-  { id: "4370", name: "FA Cup", category: "Cup Competitions" },
-  { id: "4396", name: "Copa del Rey", category: "Cup Competitions" },
+  { id: "4346", name: "Copa Libertadores", category: "Major International & Club Tournaments" },
+  { id: "4518", name: "Concacaf Champions Cup", category: "Major International & Club Tournaments" },
+  { id: "4329", name: "English League Cup", category: "Cup Competitions" },
   { id: "4444", name: "Women's Super League", category: "Women's Football" },
   { id: "4474", name: "National Women's Soccer League", category: "Women's Football" },
-  { id: "4657", name: "UEFA Women's Champions League", category: "Women's Football" },
-  { id: "4829", name: "Bangladesh Premier League", category: "Bangladesh Football" }
+  { id: "4657", name: "UEFA Women's Champions League", category: "Women's Football" }
 ];
 
 const TOP_RANKED_COUNTRIES = new Set([
@@ -285,9 +299,26 @@ const FOOTBALL_NEWS_FEEDS = [
 let RESOLVED_COMPETITIONS = null;
 
 const POPULAR_LEAGUE_KEYWORDS = [
-  "premier league", "champions league", "la liga", "serie a", "bundesliga", "ligue 1",
+  "premier league", "champions league", "la liga", "laliga", "serie a", "bundesliga", "ligue 1",
   "europa league", "copa libertadores", "fifa world cup", "euro", "copa america",
-  "women", "fa cup", "copa del rey", "afc champions"
+  "women", "fa cup", "copa del rey", "afc champions", "bangladesh premier league"
+];
+
+const FEATURED_FIXTURE_COMPETITIONS = [
+  "UEFA Champions League",
+  "Premier League",
+  "LaLiga",
+  "Serie A",
+  "Bundesliga",
+  "Ligue 1",
+  "FA Cup",
+  "UEFA Europa League",
+  "Copa del Rey",
+  "AFC Champions League",
+  "Bangladesh Premier League",
+  "FIFA World Cup",
+  "UEFA European Championship",
+  "Copa America"
 ];
 
 const PLAYER_PAGE_IDS = [
@@ -820,12 +851,33 @@ function isPopularCompetition(name = "") {
 }
 
 function leaguePriority(name = "") {
-  const lower = String(name).toLowerCase();
+  const lower = normalizeCompetitionName(name);
+  const ordered = [
+    "uefa champions league",
+    "premier league",
+    "la liga",
+    "laliga",
+    "serie a",
+    "bundesliga",
+    "ligue 1",
+    "fa cup",
+    "uefa europa league",
+    "copa del rey",
+    "afc champions league",
+    "bangladesh premier league",
+    "fifa world cup",
+    "uefa european championship",
+    "copa america",
+    "copa libertadores"
+  ];
+
+  const index = ordered.findIndex((label) => lower.includes(label) || label.includes(lower));
+  if (index >= 0) return index;
   if (lower.includes("champions league")) return 0;
-  if (lower.includes("europa league")) return 1;
-  if (lower.includes("premier league") || lower.includes("la liga") || lower.includes("serie a") || lower.includes("bundesliga") || lower.includes("ligue 1")) return 2;
-  if (lower.includes("world cup") || lower.includes("euro") || lower.includes("copa america") || lower.includes("nations league")) return 3;
-  return 4;
+  if (lower.includes("europa league")) return 8;
+  if (lower.includes("premier league") || lower.includes("la liga") || lower.includes("laliga") || lower.includes("serie a") || lower.includes("bundesliga") || lower.includes("ligue 1")) return 4;
+  if (lower.includes("world cup") || lower.includes("euro") || lower.includes("copa america") || lower.includes("nations league")) return 12;
+  return 40;
 }
 
 function getTodayIsoDate() {
@@ -1202,10 +1254,20 @@ function refreshBookingPreview() {
 }
 
 function getCompetitionMeta(leagueName = "", leagueId = "", category = "") {
+  const competitionPool = Array.isArray(state.fixtureCompetitionMeta) ? state.fixtureCompetitionMeta : [];
+  const matched = competitionPool.find((item) => {
+    const idMatch = leagueId && String(item?.id || item?.leagueId || "") === String(leagueId);
+    const nameMatch = matchesCompetitionName(item?.name || item?.league || "", leagueName);
+    return idMatch || nameMatch;
+  });
   const fallbackText = encodeURIComponent((leagueName || "League").slice(0, 3).toUpperCase());
   const fallbackLogo = `https://placehold.co/72x72/0b2d26/e8fff3?text=${fallbackText}`;
   const cached = LEAGUE_LOGO_CACHE.get(String(leagueId));
-  return { name: leagueName || "Competition", logo: cached || fallbackLogo, category: category || "Top Fixtures" };
+  return {
+    name: matched?.name || leagueName || "Competition",
+    logo: matched?.logo || cached || fallbackLogo,
+    category: matched?.category || category || "Top Fixtures"
+  };
 }
 
 function normalizeCompetitionName(name = "") {
@@ -1459,12 +1521,16 @@ async function loadBrowserNewsFallback() {
   return merged.length ? merged.slice(0, 18) : buildLocalNewsFallback();
 }
 function getStoryImage(item = {}, fallbackType = "news") {
-  const fallback = fallbackType === "highlight"
-    ? "https://images.unsplash.com/photo-1574629810360-7efbbe195018?auto=format&fit=crop&w=1200&q=80"
-    : "https://images.unsplash.com/photo-1517466787929-bc90951d0974?auto=format&fit=crop&w=1200&q=80";
   const raw = String(item.thumbnail || item.image || item.poster || "").trim();
-  if (!raw || raw.includes("placehold.co")) return fallback;
-  return raw;
+  if (raw && !raw.includes("placehold.co")) return raw;
+
+  const label = String(item.title || item.competition || (fallbackType === "highlight" ? "Football Highlights" : "Football News"))
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 48) || (fallbackType === "highlight" ? "Football Highlights" : "Football News");
+  const bg = fallbackType === "highlight" ? "08121c" : "111318";
+  const fg = fallbackType === "highlight" ? "7df9ff" : "f7f8fb";
+  return `https://placehold.co/1200x675/${bg}/${fg}?text=${encodeURIComponent(label)}`;
 }
 
 function buildStoryFallbackBundle(queryText = "") {
@@ -1586,24 +1652,111 @@ function getFixtureLeagueKey(item = {}) {
   return `${item.leagueId || "x"}::${item.league || "Competition"}`;
 }
 
+function getFeaturedLeagueFilterKey(name = "") {
+  return `featured::${normalizeCompetitionName(name) || "competition"}`;
+}
+
+function matchesCompetitionName(candidate = "", target = "") {
+  const left = normalizeCompetitionName(candidate);
+  const right = normalizeCompetitionName(target);
+  return Boolean(left && right && (left === right || left.includes(right) || right.includes(left)));
+}
+
+function getKnownCompetitionMetaByName(name = "") {
+  const pool = Array.isArray(RESOLVED_COMPETITIONS) && RESOLVED_COMPETITIONS.length ? RESOLVED_COMPETITIONS : FALLBACK_COMPETITIONS;
+  return pool.find((item) => matchesCompetitionName(item?.name, name)) || null;
+}
+
+function getFixtureActivitySummary(fixtures = []) {
+  return fixtures.reduce((summary, fixture) => {
+    const mode = normalizeFixtureStatus(fixture);
+    summary.total += 1;
+    if (mode === "live") summary.live += 1;
+    else if (mode === "upcoming") summary.upcoming += 1;
+    else if (mode === "results") summary.results += 1;
+    return summary;
+  }, { total: 0, live: 0, upcoming: 0, results: 0 });
+}
+
+function getFixtureActivityRank(summary = {}) {
+  if (Number(summary.live || 0) > 0) return 0;
+  if (Number(summary.upcoming || 0) > 0) return 1;
+  if (Number(summary.results || 0) > 0) return 2;
+  return 3;
+}
+
 function getFixtureLeagueOptions(fixtures = []) {
-  const map = new Map();
+  const actual = new Map();
   fixtures.forEach((item) => {
     const key = getFixtureLeagueKey(item);
-    const current = map.get(key) || { key, count: 0, item };
-    current.count += 1;
+    const current = actual.get(key) || { key, item, fixtures: [] };
     current.item = current.item || item;
-    map.set(key, current);
+    current.fixtures.push(item);
+    actual.set(key, current);
   });
 
-  return Array.from(map.values())
+  const actualItems = Array.from(actual.values()).map((entry) => ({
+    ...entry,
+    count: entry.fixtures.length,
+    summary: getFixtureActivitySummary(entry.fixtures)
+  }));
+  const usedKeys = new Set();
+
+  const featured = FEATURED_FIXTURE_COMPETITIONS.map((name) => {
+    const matches = actualItems.filter((entry) => matchesCompetitionName(entry?.item?.league, name));
+    matches.forEach((entry) => usedKeys.add(entry.key));
+
+    if (matches.length) {
+      const primary = matches.slice().sort((a, b) => {
+        const rankDiff = getFixtureActivityRank(a.summary) - getFixtureActivityRank(b.summary);
+        if (rankDiff !== 0) return rankDiff;
+        return Number(b.count || 0) - Number(a.count || 0);
+      })[0];
+      const combinedFixtures = matches.flatMap((entry) => entry.fixtures || []);
+      const summary = getFixtureActivitySummary(combinedFixtures);
+      return {
+        ...primary,
+        count: combinedFixtures.length,
+        fixtures: combinedFixtures,
+        summary,
+        featured: true,
+        featuredName: name
+      };
+    }
+
+    const known = getKnownCompetitionMetaByName(name);
+    return {
+      key: getFeaturedLeagueFilterKey(name),
+      count: 0,
+      fixtures: [],
+      summary: { total: 0, live: 0, upcoming: 0, results: 0 },
+      featured: true,
+      featuredName: name,
+      item: {
+        league: name,
+        leagueId: String(known?.id || ""),
+        category: known?.category || "Top Leagues",
+        leagueLogo: known?.logo || ""
+      }
+    };
+  }).sort((a, b) => {
+    const rankDiff = getFixtureActivityRank(a.summary) - getFixtureActivityRank(b.summary);
+    if (rankDiff !== 0) return rankDiff;
+    return leaguePriority(a.item?.league || "") - leaguePriority(b.item?.league || "");
+  });
+
+  const remaining = actualItems
+    .filter((entry) => !usedKeys.has(entry.key))
     .sort((a, b) => {
+      const rankDiff = getFixtureActivityRank(a.summary) - getFixtureActivityRank(b.summary);
+      if (rankDiff !== 0) return rankDiff;
       const priorityDiff = leaguePriority(a.item?.league || "") - leaguePriority(b.item?.league || "");
       if (priorityDiff !== 0) return priorityDiff;
       if (b.count !== a.count) return b.count - a.count;
       return String(a.item?.league || "").localeCompare(String(b.item?.league || ""));
-    })
-    .slice(0, 12);
+    });
+
+  return [...featured, ...remaining].slice(0, 18);
 }
 
 function renderFixtureLeagueRail(fixtures = []) {
@@ -1619,20 +1772,27 @@ function renderFixtureLeagueRail(fixtures = []) {
       <span class="league-rail-icon">All</span>
       <span class="league-rail-copy">
         <strong>All leagues</strong>
-        <small>${fixtures.length} matches</small>
+        <small>${fixtures.length} matches on board</small>
       </span>
     </button>
   `;
 
-  const items = options.map(({ key, count, item }) => {
+  const items = options.map(({ key, count, item, featured, summary }) => {
     const meta = getCompetitionMeta(item?.league, item?.leagueId, item?.category);
     const active = state.fixtureLeague === key;
+    const countText = (summary?.live || 0) > 0
+      ? `${summary.live} live match${summary.live > 1 ? "es" : ""}`
+      : (summary?.upcoming || 0) > 0
+        ? `${summary.upcoming} upcoming match${summary.upcoming > 1 ? "es" : ""}`
+        : (summary?.results || 0) > 0
+          ? `${summary.results} result${summary.results > 1 ? "s" : ""}`
+          : (featured ? "No fixtures today" : "No fixtures");
     return `
-      <button class="league-rail-btn${active ? " active" : ""}" type="button" data-leaguekey="${escapeHtml(key)}">
+      <button class="league-rail-btn${active ? " active" : ""}${featured ? " featured" : ""}" type="button" data-leaguekey="${escapeHtml(key)}">
         <img class="league-rail-logo" src="${escapeHtml(meta.logo)}" alt="${escapeHtml(meta.name)} logo" />
         <span class="league-rail-copy">
           <strong>${escapeHtml(meta.name)}</strong>
-          <small>${count} fixture${count > 1 ? "s" : ""}</small>
+          <small>${escapeHtml(countText)}</small>
         </span>
       </button>
     `;
@@ -1649,6 +1809,13 @@ function renderFixtureLeagueRail(fixtures = []) {
 
 function filterFixturesByLeague(fixtures = []) {
   if (state.fixtureLeague === "all") return fixtures;
+  if (String(state.fixtureLeague).startsWith("featured::")) {
+    const target = String(state.fixtureLeague).replace(/^featured::/, "").trim();
+    return fixtures.filter((item) => {
+      const leagueName = normalizeCompetitionName(item?.league || "");
+      return leagueName === target || leagueName.includes(target) || target.includes(leagueName);
+    });
+  }
   return fixtures.filter((item) => getFixtureLeagueKey(item) === state.fixtureLeague);
 }
 
@@ -1685,7 +1852,7 @@ function renderFixtures(fixtures = []) {
 
   if (!displayFixtures.length) {
     const label = state.fixtureMode === "all" ? "matches" : state.fixtureMode;
-    els.fixturesList.innerHTML = `<div class="empty-box">No ${label} matches are available from the live match service right now.</div>`;
+    els.fixturesList.innerHTML = `<div class="empty-box">No ${label} are available from the live match service right now.</div>`;
     return;
   }
 
@@ -1774,6 +1941,15 @@ function renderFixtures(fixtures = []) {
   injectUiIcons(els.fixturesList);
   animateListEntrance(els.fixturesList, ".sofa-row");
 }
+function hasVisibleLineup(lineup = null) {
+  return Boolean(
+    lineup && (
+      (Array.isArray(lineup.home) && lineup.home.length) ||
+      (Array.isArray(lineup.away) && lineup.away.length)
+    )
+  );
+}
+
 async function loadFixtureLineup(fixtureId, triggerBtn) {
   if (!fixtureId) return;
 
@@ -1782,7 +1958,7 @@ async function loadFixtureLineup(fixtureId, triggerBtn) {
 
   if (!box.classList.contains("hidden")) {
     box.classList.add("hidden");
-    if (triggerBtn) triggerBtn.textContent = "View lineups";
+    if (triggerBtn) triggerBtn.textContent = "Lineups";
     return;
   }
 
@@ -1791,29 +1967,50 @@ async function loadFixtureLineup(fixtureId, triggerBtn) {
   if (triggerBtn) triggerBtn.textContent = "Hide lineups";
 
   try {
-    let lineup = LINEUP_CACHE.get(fixtureId);
-    if (!lineup) {
-      const resp = await fetch(`${SPORTMONKS_PROXY_URL}?type=lineups&fixtureId=${encodeURIComponent(fixtureId)}`);
-      const data = await resp.json();
-      lineup = data?.lineup || null;
-      if (lineup) LINEUP_CACHE.set(fixtureId, lineup);
+    let lineup = LINEUP_CACHE.get(String(fixtureId)) || null;
+
+    if (!hasVisibleLineup(lineup)) {
+      const cachedDetail = FIXTURE_DETAIL_CACHE.get(String(fixtureId));
+      if (cachedDetail?.lineups && hasVisibleLineup(cachedDetail.lineups)) {
+        lineup = cachedDetail.lineups;
+        LINEUP_CACHE.set(String(fixtureId), lineup);
+      }
     }
 
+    if (!hasVisibleLineup(lineup)) {
+      const resp = await fetch(`${SPORTMONKS_PROXY_URL}?type=lineups&fixtureId=${encodeURIComponent(fixtureId)}`);
+      const data = await resp.json();
+      if (!resp.ok || data?.ok === false) throw new Error(data?.error || "Could not load lineups.");
+      lineup = data?.lineup || null;
+      if (hasVisibleLineup(lineup)) LINEUP_CACHE.set(String(fixtureId), lineup);
+    }
+
+    if (!hasVisibleLineup(lineup)) {
+      const resp = await fetch(`${SPORTMONKS_PROXY_URL}?type=detail&fixtureId=${encodeURIComponent(String(fixtureId))}`);
+      const payload = await resp.json();
+      if (resp.ok && payload?.ok && payload?.detail) {
+        FIXTURE_DETAIL_CACHE.set(String(fixtureId), payload.detail);
+        lineup = payload.detail.lineups || null;
+        if (hasVisibleLineup(lineup)) LINEUP_CACHE.set(String(fixtureId), lineup);
+      }
+    }
+
+    const fixture = (state.fixturesData || []).find((item) => String(item.id) === String(fixtureId)) || {};
     const renderSide = (teamName, rows) => {
       const list = Array.isArray(rows) ? rows : [];
-      if (!list.length) return `<div class="muted">${escapeHtml(teamName || "Team")} lineup not available yet.</div>`;
+      if (!list.length) return `<div class="muted">${escapeHtml(teamName || "Team")} starting XI not available yet.</div>`;
       return `
         <strong>${escapeHtml(teamName || "Team")}</strong>
         <ol class="lineup-list">
-          ${list.map((p) => `<li>${escapeHtml([p.number, p.name].filter(Boolean).join(". "))}</li>`).join("")}
+          ${list.map((p) => `<li>${escapeHtml([p.number, p.name, p.position].filter(Boolean).join(" • "))}</li>`).join("")}
         </ol>
       `;
     };
 
     box.innerHTML = `
       <div class="lineup-grid">
-        <div>${renderSide(lineup?.homeTeam, lineup?.home)}</div>
-        <div>${renderSide(lineup?.awayTeam, lineup?.away)}</div>
+        <div>${renderSide(lineup?.homeTeam || fixture.home, lineup?.home)}</div>
+        <div>${renderSide(lineup?.awayTeam || fixture.away, lineup?.away)}</div>
       </div>
     `;
   } catch (err) {
@@ -1933,6 +2130,10 @@ async function openFixtureDetail(fixtureId, triggerBtn = null) {
       if (!resp.ok || !payload?.ok || !payload?.detail) throw new Error(payload?.error || "Could not load match center.");
       detail = payload.detail;
       FIXTURE_DETAIL_CACHE.set(String(fixtureId), detail);
+    }
+
+    if (detail?.lineups && hasVisibleLineup(detail.lineups)) {
+      LINEUP_CACHE.set(String(fixtureId), detail.lineups);
     }
 
     openFixtureDetailModal(title, meta, renderFixtureDetail(detail));
@@ -2061,7 +2262,7 @@ async function loadDailyFixtures(options = {}) {
 
   const { silent = false } = options || {};
   const now = new Date();
-  const isoDate = now.toISOString().slice(0, 10);
+  const isoDate = getTodayIsoDate();
   if (els.fixturesDate) {
     const lastSuccess = state.fixturesLastLoadedAt ? ` | Last success: ${new Date(state.fixturesLastLoadedAt).toLocaleTimeString()}` : "";
     els.fixturesDate.textContent = `Updated: ${now.toLocaleString()}${lastSuccess} | Auto refresh: 45s`;
@@ -2082,6 +2283,12 @@ async function loadDailyFixtures(options = {}) {
         throw new Error(payload?.error || "Live match service error.");
       }
 
+      state.fixtureCompetitionMeta = Array.isArray(payload?.competitions) ? payload.competitions : [];
+      state.fixtureCompetitionMeta.forEach((competition) => {
+        if (competition?.id && competition?.logo) {
+          LEAGUE_LOGO_CACHE.set(String(competition.id), competition.logo);
+        }
+      });
       mapped = (Array.isArray(payload.fixtures) ? payload.fixtures : []).map((item) => ({
         ...item,
         category: item.category || "Global Football",
@@ -2089,13 +2296,10 @@ async function loadDailyFixtures(options = {}) {
       }));
 
       if (!mapped.length) {
-        mapped = await loadClientFixtureFallback(isoDate);
-        if (mapped.length) sourceLabel = "Browser fallback";
+        throw new Error("No fixtures returned from the live match service.");
       }
     } catch (serviceErr) {
-      mapped = await loadClientFixtureFallback(isoDate);
-      if (!mapped.length) throw serviceErr;
-      sourceLabel = "Browser fallback";
+      throw serviceErr;
     }
 
     mapped.forEach((item) => {
@@ -2205,7 +2409,7 @@ async function loadHighlights(queryText = "") {
   els.highlightsList.innerHTML = `<div class="skeleton-grid"><div class="skeleton-card"></div><div class="skeleton-card"></div><div class="skeleton-card"></div></div>`;
 
   try {
-    const [newsItems, scorebatItems, sportsDbItems] = await Promise.all([
+    const [newsItems, scorebatItems] = await Promise.all([
       loadFootballNews(),
       (async () => {
         try {
@@ -2221,7 +2425,7 @@ async function loadHighlights(queryText = "") {
               competition: item.competition || "Football Highlights",
               source: "ScoreBat",
               publishedAt: item.date ? new Date(item.date).toLocaleString() : "",
-              thumbnail: item.thumbnail || "https://images.unsplash.com/photo-1574629810360-7efbbe195018?auto=format&fit=crop&w=900&q=80",
+              thumbnail: item.thumbnail || "",
               url,
               kind: "highlight"
             };
@@ -2229,12 +2433,11 @@ async function loadHighlights(queryText = "") {
         } catch {
           return [];
         }
-      })(),
-      loadSportsDbHighlights()
+      })()
     ]);
 
     const normalizedNews = newsItems.map((item) => ({ ...item, kind: "news" }));
-    const normalizedHighlights = [...scorebatItems, ...sportsDbItems].map((item) => ({
+    const normalizedHighlights = [...scorebatItems].map((item) => ({
       ...item,
       competition: item.competition || "Football Highlights",
       kind: item.kind || "highlight"

@@ -1,6 +1,21 @@
 const SPORTMONKS_BASE = "https://api.sportmonks.com/v3/football";
 const THESPORTSDB_BASE = "https://www.thesportsdb.com/api/v1/json/123";
 
+const FEATURED_COMPETITIONS = [
+  { id: "4480", name: "UEFA Champions League", category: "Top Leagues" },
+  { id: "4328", name: "Premier League", category: "Top Leagues" },
+  { id: "4335", name: "LaLiga", category: "Top Leagues" },
+  { id: "4332", name: "Serie A", category: "Top Leagues" },
+  { id: "4331", name: "Bundesliga", category: "Top Leagues" },
+  { id: "4334", name: "Ligue 1", category: "Top Leagues" },
+  { id: "4370", name: "FA Cup", category: "Top Leagues" },
+  { id: "4481", name: "UEFA Europa League", category: "Top Leagues" },
+  { id: "4396", name: "Copa del Rey", category: "Top Leagues" },
+  { id: "4487", name: "AFC Champions League", category: "Top Leagues" },
+  { id: "4829", name: "Bangladesh Premier League", category: "Top Leagues" }
+];
+
+const LEAGUE_META_CACHE = new Map();
 function toIsoDate(d = new Date()) {
   const year = d.getUTCFullYear();
   const month = String(d.getUTCMonth() + 1).padStart(2, "0");
@@ -146,6 +161,58 @@ function fixturePriority(fixture = {}) {
   return 1;
 }
 
+function extractTextValue(value = "") {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "object") {
+    return String(value.display_name || value.common_name || value.name || value.label || value.code || "").trim();
+  }
+  return String(value).trim();
+}
+
+function parseLineupPlayer(row = {}) {
+  const details = Array.isArray(row?.details) ? row.details : [];
+  const detail = details.find((entry) => entry?.player) || details[0] || {};
+  const player = row?.player || detail?.player || {};
+  const number = detail?.jersey_number ?? row?.jersey_number ?? row?.shirt_number ?? row?.number ?? "";
+  const formationOrder = Number(row?.formation_position ?? row?.formation_position_number ?? detail?.formation_position ?? Number.MAX_SAFE_INTEGER);
+
+  return {
+    id: String(player?.id || row?.player_id || ""),
+    name: extractTextValue(player) || extractTextValue(row?.player_name) || "",
+    position: extractTextValue(detail?.position || row?.position || row?.type || row?.lineup_position),
+    number: extractTextValue(number),
+    sort: Number.isFinite(formationOrder) ? formationOrder : Number.MAX_SAFE_INTEGER
+  };
+}
+
+function lineupRowsForParticipant(lineups = [], participantId = "", participantName = "") {
+  const targetId = String(participantId || "");
+  const targetName = extractTextValue(participantName).toLowerCase();
+
+  return lineups
+    .filter((row) => {
+      const rowId = String(row?.team_id || row?.participant_id || row?.team?.id || row?.participant?.id || "");
+      const rowName = extractTextValue(row?.team?.name || row?.participant?.name || row?.team_name || row?.participant_name).toLowerCase();
+      return (targetId && rowId === targetId) || (targetName && rowName === targetName);
+    })
+    .map(parseLineupPlayer)
+    .filter((player) => player.name)
+    .sort((a, b) => {
+      if (a.sort !== b.sort) return a.sort - b.sort;
+      return a.name.localeCompare(b.name);
+    })
+    .map(({ sort, ...player }) => player);
+}
+
+function hasLineupData(lineup = null) {
+  return Boolean(
+    lineup && (
+      (Array.isArray(lineup.home) && lineup.home.length) ||
+      (Array.isArray(lineup.away) && lineup.away.length)
+    )
+  );
+}
+
 function parseLineups(fixture = {}) {
   const participants = Array.isArray(fixture?.participants) ? fixture.participants : [];
   const lineups = Array.isArray(fixture?.lineups) ? fixture.lineups : [];
@@ -153,26 +220,11 @@ function parseLineups(fixture = {}) {
   const home = participants.find((p) => String(p?.meta?.location || "").toLowerCase() === "home");
   const away = participants.find((p) => String(p?.meta?.location || "").toLowerCase() === "away");
 
-  const mapSide = (participantId) => {
-    const rows = lineups.filter((l) => String(l?.team_id || l?.participant_id) === String(participantId));
-    return rows.map((row) => {
-      const details = Array.isArray(row?.details) ? row.details : [];
-      const detail = details.find((d) => d?.player) || details[0] || {};
-      const p = detail.player || {};
-      return {
-        id: String(p.id || row.player_id || ""),
-        name: p.display_name || p.common_name || p.name || "Unknown",
-        position: detail.position || row.position || "",
-        number: detail.jersey_number || row.shirt_number || ""
-      };
-    }).filter((p) => p.name && p.name !== "Unknown");
-  };
-
   return {
     homeTeam: home?.name || "Home",
     awayTeam: away?.name || "Away",
-    home: mapSide(home?.id),
-    away: mapSide(away?.id)
+    home: lineupRowsForParticipant(lineups, home?.id, home?.name),
+    away: lineupRowsForParticipant(lineups, away?.id, away?.name)
   };
 }
 
@@ -201,6 +253,21 @@ function parseEvents(fixture = {}) {
     });
 }
 
+function extractStatValue(value) {
+  if (value === null || value === undefined || value === "") return null;
+  if (Array.isArray(value)) {
+    const first = value.find((entry) => entry !== null && entry !== undefined && entry !== "");
+    return extractStatValue(first);
+  }
+  if (typeof value === "object") {
+    const preferred = [value.total, value.percentage, value.current, value.value, value.stat, value.amount];
+    const first = preferred.find((entry) => entry !== null && entry !== undefined && entry !== "")
+      ?? Object.values(value).find((entry) => entry !== null && entry !== undefined && entry !== "");
+    return extractStatValue(first);
+  }
+  return value;
+}
+
 function parseStatistics(fixture = {}) {
   const stats = Array.isArray(fixture?.statistics) ? fixture.statistics : [];
   const participants = Array.isArray(fixture?.participants) ? fixture.participants : [];
@@ -212,14 +279,29 @@ function parseStatistics(fixture = {}) {
   stats.forEach((row) => {
     const typeName = row?.type?.name || row?.type?.developer_name || "Stat";
     const entry = byType.get(typeName) || { name: typeName, home: null, away: null };
-    const participantId = String(row?.participant_id || "");
-    const value = row?.data?.value ?? row?.value ?? row?.data ?? null;
-    if (participantId && String(home?.id || "") === participantId) entry.home = value;
-    if (participantId && String(away?.id || "") === participantId) entry.away = value;
+    const participantId = String(row?.participant_id || row?.team_id || row?.participant?.id || "");
+    const side = String(row?.location || row?.participant?.meta?.location || row?.team_side || "").toLowerCase();
+    const value = extractStatValue(row?.data?.value ?? row?.value ?? row?.data ?? null);
+    if ((participantId && String(home?.id || "") === participantId) || side === "home") entry.home = value;
+    if ((participantId && String(away?.id || "") === participantId) || side === "away") entry.away = value;
     byType.set(typeName, entry);
   });
 
-  return Array.from(byType.values()).slice(0, 40);
+  return Array.from(byType.values())
+    .filter((entry) => entry.home !== null || entry.away !== null)
+    .slice(0, 40);
+}
+
+function mergeFixtureDetail(primary = {}, fallback = {}) {
+  return {
+    ...primary,
+    resultInfo: primary?.resultInfo || fallback?.resultInfo || "",
+    weather: primary?.weather || fallback?.weather || null,
+    lineups: hasLineupData(primary?.lineups) ? primary.lineups : (fallback?.lineups || primary?.lineups),
+    events: Array.isArray(primary?.events) && primary.events.length ? primary.events : (fallback?.events || []),
+    statistics: Array.isArray(primary?.statistics) && primary.statistics.length ? primary.statistics : (fallback?.statistics || []),
+    sidelined: Array.isArray(primary?.sidelined) && primary.sidelined.length ? primary.sidelined : (fallback?.sidelined || [])
+  };
 }
 
 function parseFixtureDetail(fixture = {}) {
@@ -314,6 +396,70 @@ function mapSportsDbEvent(ev = {}) {
   };
 }
 
+async function enrichCompetitionMeta(competition = {}) {
+  const key = String(competition?.id || "");
+  if (!key) return competition;
+  if (LEAGUE_META_CACHE.has(key)) return { ...competition, ...LEAGUE_META_CACHE.get(key) };
+
+  try {
+    const payload = await theSportsDbFetch("lookupleague.php", { id: key });
+    const league = Array.isArray(payload?.leagues) ? payload.leagues[0] : null;
+    const meta = {
+      id: key,
+      name: league?.strLeague || competition?.name || "Competition",
+      logo: league?.strBadge || league?.strLogo || league?.strFanart1 || "",
+      category: competition?.category || "Top Leagues"
+    };
+    LEAGUE_META_CACHE.set(key, meta);
+    return meta;
+  } catch {
+    const fallback = {
+      id: key,
+      name: competition?.name || "Competition",
+      logo: competition?.logo || "",
+      category: competition?.category || "Top Leagues"
+    };
+    LEAGUE_META_CACHE.set(key, fallback);
+    return fallback;
+  }
+}
+
+function mapFeaturedCompetitionEvent(ev = {}, competition = {}) {
+  const mapped = mapSportsDbEvent(ev);
+  return {
+    ...mapped,
+    leagueId: String(competition?.id || mapped.leagueId || ""),
+    league: competition?.name || mapped.league,
+    leagueLogo: competition?.logo || mapped.leagueLogo || "",
+    category: competition?.category || "Top Leagues"
+  };
+}
+
+async function fetchFeaturedCompetitionFixtures(date) {
+  const competitions = await Promise.all(FEATURED_COMPETITIONS.map((competition) => enrichCompetitionMeta(competition)));
+  const bundles = await Promise.all(competitions.map(async (competition) => {
+    try {
+      const [dayPayload, upcomingPayload] = await Promise.all([
+        theSportsDbFetch("eventsday.php", { d: date, id: competition.id }).catch(() => ({ events: [] })),
+        theSportsDbFetch("eventsnextleague.php", { id: competition.id }).catch(() => ({ events: [] }))
+      ]);
+
+      const dayEvents = Array.isArray(dayPayload?.events) ? dayPayload.events : [];
+      const upcomingEvents = Array.isArray(upcomingPayload?.events) ? upcomingPayload.events : [];
+      return [...dayEvents, ...upcomingEvents].map((event) => mapFeaturedCompetitionEvent(event, competition));
+    } catch {
+      return [];
+    }
+  }));
+
+  const deduped = new Map();
+  bundles.flat().forEach((fixture) => {
+    if (!fixture?.id) return;
+    if (!deduped.has(fixture.id)) deduped.set(fixture.id, fixture);
+  });
+  return Array.from(deduped.values());
+}
+
 function mapSportsDbStats(ev = {}) {
   const pairs = [
     ["Shots", ev?.intHomeShots, ev?.intAwayShots],
@@ -354,16 +500,30 @@ async function fallbackFixtures(date) {
     return events.map(mapSportsDbEvent).filter((item) => item.id);
   };
 
-  const [prev, today, next] = await Promise.all([
+  const [featured, prev, today, next] = await Promise.all([
+    fetchFeaturedCompetitionFixtures(date).catch(() => []),
     loadEvents(addDays(date, -1)).catch(() => []),
     loadEvents(date).catch(() => []),
     loadEvents(addDays(date, 1)).catch(() => [])
   ]);
 
-  const merged = [...prev, ...today, ...next];
+  const merged = [...featured, ...prev, ...today, ...next];
   const map = new Map();
   merged.forEach((fixture) => {
-    if (!map.has(fixture.id)) map.set(fixture.id, fixture);
+    if (!fixture?.id) return;
+    const current = map.get(fixture.id);
+    if (!current) {
+      map.set(fixture.id, fixture);
+      return;
+    }
+
+    map.set(fixture.id, {
+      ...current,
+      ...fixture,
+      leagueLogo: current.leagueLogo || fixture.leagueLogo || "",
+      homeBadge: current.homeBadge || fixture.homeBadge || "",
+      awayBadge: current.awayBadge || fixture.awayBadge || ""
+    });
   });
 
   return Array.from(map.values())
@@ -408,10 +568,19 @@ module.exports = async (req, res) => {
       }
 
       try {
-        const include = "participants;league;venue;state;scores;season;round;events.type;events.player;events.period;statistics.type;sidelined.sideline.player;sidelined.sideline.type;weatherReport;lineups.details.player";
+        const include = "participants;league;venue;state;scores;season;round;events.type;events.player;events.period;statistics.type;sidelined.sideline.player;sidelined.sideline.type;weatherReport;lineups.player;lineups.details.player";
         const payload = await sportmonksFetch(`/fixtures/${fixtureId}`, { include });
         const fixture = payload?.data || {};
-        res.status(200).json({ ok: true, detail: parseFixtureDetail(fixture) });
+        let detail = parseFixtureDetail(fixture);
+
+        if (!detail.statistics.length || !detail.events.length || !hasLineupData(detail.lineups)) {
+          try {
+            const fallback = await fallbackDetail(fixtureId);
+            detail = mergeFixtureDetail(detail, fallback);
+          } catch {}
+        }
+
+        res.status(200).json({ ok: true, detail });
       } catch {
         const detail = await fallbackDetail(fixtureId);
         res.status(200).json({ ok: true, detail });
@@ -427,10 +596,19 @@ module.exports = async (req, res) => {
       }
 
       try {
-        const include = "participants;lineups.details.player";
+        const include = "participants;lineups.player;lineups.details.player";
         const payload = await sportmonksFetch(`/fixtures/${fixtureId}`, { include });
         const fixture = payload?.data || {};
-        res.status(200).json({ ok: true, lineup: parseLineups(fixture) });
+        let lineup = parseLineups(fixture);
+
+        if (!hasLineupData(lineup)) {
+          try {
+            const detail = await fallbackDetail(fixtureId);
+            lineup = hasLineupData(detail?.lineups) ? detail.lineups : lineup;
+          } catch {}
+        }
+
+        res.status(200).json({ ok: true, lineup });
       } catch {
         const lineup = await fallbackLineups(fixtureId);
         res.status(200).json({ ok: true, lineup });
@@ -440,6 +618,7 @@ module.exports = async (req, res) => {
 
     const include = "participants;league;venue;state;scores;season;round";
     const date = String(req.query.date || toIsoDate());
+    const featuredCompetitions = await Promise.all(FEATURED_COMPETITIONS.map((competition) => enrichCompetitionMeta(competition)));
 
     try {
       const [livePayload, ...dayPayloads] = await Promise.all([
@@ -469,15 +648,43 @@ module.exports = async (req, res) => {
         }
       });
 
-      const fixtures = Array.from(map.values())
+      let fixtures = Array.from(map.values())
         .map(({ _priority, ...fixture }) => fixture)
         .sort((a, b) => a.stamp - b.stamp)
         .slice(0, 300);
 
-      res.status(200).json({ ok: true, fixtures });
+      const featuredFixtures = await fetchFeaturedCompetitionFixtures(date).catch(() => []);
+      if (featuredFixtures.length) {
+        const supplemented = new Map(fixtures.map((fixture) => [fixture.id, fixture]));
+        featuredFixtures.forEach((fixture) => {
+          if (!fixture?.id) return;
+          const current = supplemented.get(fixture.id);
+          if (!current) {
+            supplemented.set(fixture.id, fixture);
+            return;
+          }
+
+          supplemented.set(fixture.id, {
+            ...fixture,
+            ...current,
+            leagueLogo: current.leagueLogo || fixture.leagueLogo || "",
+            homeBadge: current.homeBadge || fixture.homeBadge || "",
+            awayBadge: current.awayBadge || fixture.awayBadge || ""
+          });
+        });
+        fixtures = Array.from(supplemented.values())
+          .sort((a, b) => a.stamp - b.stamp)
+          .slice(0, 300);
+      }
+
+      if (!fixtures.length) {
+        fixtures = await fallbackFixtures(date);
+      }
+
+      res.status(200).json({ ok: true, fixtures, competitions: featuredCompetitions });
     } catch {
       const fixtures = await fallbackFixtures(date);
-      res.status(200).json({ ok: true, fixtures });
+      res.status(200).json({ ok: true, fixtures, competitions: featuredCompetitions });
     }
   } catch (err) {
     res.status(500).json({
