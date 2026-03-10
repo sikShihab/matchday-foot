@@ -1,4 +1,4 @@
-﻿import { initializeApp } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-app.js";
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-app.js";
 import {
   getAuth,
   onAuthStateChanged,
@@ -68,7 +68,11 @@ const state = {
   fixtureLeague: "all",
   highlightsData: [],
   fixturesRefreshTimer: null,
-  fixturesLastLoadedAt: 0
+  fixturesLastLoadedAt: 0,
+  adminTrackerEntries: [],
+  adminTrackerFilter: "all",
+  adminMatchesCache: [],
+  adminSelectedMatchId: ""
 };
 
 const $ = (id) => document.getElementById(id);
@@ -139,6 +143,7 @@ const els = {
   bkashLast3Input: $("bkashLast3Input"),
   playersList: $("playersList"),
   playersMeta: $("playersMeta"),
+  matchTeamsBoard: $("matchTeamsBoard"),
 
   adminMatchForm: $("adminMatchForm"),
   adminVenue: $("adminVenue"),
@@ -163,6 +168,7 @@ const els = {
   adminActivityList: $("adminActivityList"),
   adminActivitySummary: $("adminActivitySummary"),
   adminActivityUsers: $("adminActivityUsers"),
+  adminTrackerFilters: $("adminTrackerFilters"),
 
   profileForm: $("profileForm"),
   profileName: $("profileName"),
@@ -847,6 +853,162 @@ function extractEmbedSrc(embedHtml = "") {
 
 function getBookedSlots(bookings = []) {
   return bookings.reduce((sum, item) => sum + Math.max(Number(item?.slots || 1), 0), 0);
+}
+
+function slugifyValue(value = "") {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40) || "player";
+}
+
+function getMatchStatusPriority(status = "open") {
+  const normalized = String(status || "open").toLowerCase();
+  if (normalized === "open") return 0;
+  if (normalized === "hold") return 1;
+  if (normalized === "closed") return 2;
+  return 3;
+}
+
+function getMatchStatusLabel(status = "open") {
+  const normalized = String(status || "open").toLowerCase();
+  if (normalized === "hold") return "On hold";
+  if (normalized === "closed") return "Closed";
+  return "Open";
+}
+
+function getUnpaidBookingStatus(paymentMethod = "On-spot") {
+  return String(paymentMethod || "").toLowerCase() === "bkash" ? "pending" : "due";
+}
+
+function syncStoredPaymentTotals(booking = {}, totalFee = 0, overrideStatus = "") {
+  const paymentMethod = booking.paymentMethod || "On-spot";
+  const paymentStatus = overrideStatus || booking.paymentStatus || getUnpaidBookingStatus(paymentMethod);
+  const pay = getPaymentDetails(paymentMethod, totalFee, { paymentStatus });
+  return {
+    paymentStatus,
+    paidAmount: pay.paidAmount,
+    dueAmount: pay.dueAmount
+  };
+}
+
+function buildRosterEntryKey(booking = {}, guestIndex = -1) {
+  const base = slugifyValue(booking.userId || booking.email || booking.name || "player");
+  return guestIndex < 0 ? `primary-${base}` : `guest-${base}-${guestIndex + 1}`;
+}
+
+function buildMatchRoster(match = {}, bookings = []) {
+  const teamAssignments = match?.teamAssignments && typeof match.teamAssignments === "object" ? match.teamAssignments : {};
+  const defaultFee = Number(match?.slotFee || 0);
+  const roster = [];
+
+  bookings.forEach((booking, bookingIndex) => {
+    const ownerName = String(booking.name || booking.email || `Player ${bookingIndex + 1}`).trim() || `Player ${bookingIndex + 1}`;
+    const ownerUserId = String(booking.userId || `manual-${bookingIndex}`);
+    const slots = Math.max(Number(booking.slots || 1), 1);
+    const extraNames = Array.isArray(booking.extraPlayerNames)
+      ? booking.extraPlayerNames.map((name) => String(name || "").trim()).filter(Boolean)
+      : [];
+    const names = [ownerName, ...extraNames];
+
+    while (names.length < slots) {
+      names.push(`Player ${names.length + 1}`);
+    }
+
+    const totalFee = Number(booking.totalFee || (Number(booking.slotFee || defaultFee || 0) * slots));
+    const pay = getStoredPaymentDetails({ ...booking, totalFee });
+
+    names.slice(0, slots).forEach((displayName, index) => {
+      const guestIndex = index - 1;
+      const entryKey = buildRosterEntryKey(booking, guestIndex);
+      const rawTeam = String(teamAssignments[entryKey] || "").toUpperCase();
+      const teamCode = rawTeam === "A" || rawTeam === "B" ? rawTeam : "";
+      roster.push({
+        entryKey,
+        displayName,
+        teamCode,
+        teamLabel: teamCode === "A" ? "Team A" : teamCode === "B" ? "Team B" : "Unassigned",
+        isPrimary: index === 0,
+        guestIndex,
+        bookingUserId: ownerUserId,
+        bookingOwnerName: ownerName,
+        bookingEmail: String(booking.email || ""),
+        slots,
+        paymentMethod: String(booking.paymentMethod || "On-spot"),
+        paymentLabel: pay.methodLabel,
+        paymentStatus: String(booking.paymentStatus || getUnpaidBookingStatus(booking.paymentMethod || "On-spot")),
+        paymentStatusLabel: pay.status,
+        paidAmount: pay.paidAmount,
+        dueAmount: pay.dueAmount,
+        totalFee,
+        manualEntry: booking.manualEntry === true
+      });
+    });
+  });
+
+  return roster;
+}
+
+function getRosterTeamGroups(match = {}, roster = []) {
+  return roster.reduce((acc, player) => {
+    if (player.teamCode === "A") acc.a.push(player);
+    else if (player.teamCode === "B") acc.b.push(player);
+    else acc.unassigned.push(player);
+    return acc;
+  }, { a: [], b: [], unassigned: [] });
+}
+
+function renderTeamBoard(groups = {}, options = {}) {
+  const sections = [
+    { key: "a", label: "Team A", className: "team-a", items: groups.a || [] },
+    { key: "b", label: "Team B", className: "team-b", items: groups.b || [] },
+    { key: "unassigned", label: "Unassigned", className: "unassigned", items: groups.unassigned || [] }
+  ];
+
+  return sections.map((section) => {
+    const members = section.items.length
+      ? section.items.map((player) => `
+          <div class="team-chip">
+            <strong>${escapeHtml(player.displayName || "Player")}</strong>
+            <div class="muted">${escapeHtml(player.isPrimary ? "Booking owner" : `Booked by ${player.bookingOwnerName || "Player"}`)}</div>
+          </div>
+        `).join("")
+      : `<div class="team-chip empty">${escapeHtml(options.emptyMessage || "No players here yet.")}</div>`;
+
+    return `
+      <div class="team-column">
+        <div class="team-column-head">
+          <strong>${section.label}</strong>
+          <span class="team-count ${section.className}">${section.items.length}</span>
+        </div>
+        <div class="team-roster">${members}</div>
+      </div>
+    `;
+  }).join("");
+}
+
+function renderPlayerTeams(match, bookings = []) {
+  if (!els.matchTeamsBoard) return;
+  if (!match) {
+    els.matchTeamsBoard.innerHTML = `<div class="empty-box">No teams available right now.</div>`;
+    return;
+  }
+
+  const roster = buildMatchRoster(match, bookings);
+  if (!roster.length) {
+    els.matchTeamsBoard.innerHTML = `<div class="empty-box">Teams will appear here after players are added.</div>`;
+    return;
+  }
+
+  const groups = getRosterTeamGroups(match, roster);
+  const hasAssignedTeams = groups.a.length || groups.b.length;
+  if (!hasAssignedTeams) {
+    els.matchTeamsBoard.innerHTML = `<div class="empty-box">Teams have not been divided yet.</div>`;
+    return;
+  }
+
+  els.matchTeamsBoard.innerHTML = renderTeamBoard(groups, { emptyMessage: "No players assigned." });
 }
 
 function getRequestedSlots() {
@@ -2234,7 +2396,9 @@ function renderAdminTrackerFilters(items = []) {
   els.adminTrackerFilters.querySelectorAll('.tracker-filter-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
       state.adminTrackerFilter = String(btn.dataset.matchfilter || 'all');
+      if (state.adminTrackerFilter !== 'all') state.adminSelectedMatchId = state.adminTrackerFilter;
       renderAdminTrackerDashboard(state.adminTrackerEntries || []);
+      renderAdminMatchesFromCache();
     });
   });
 }
@@ -2346,9 +2510,11 @@ function renderAdminActivityList(items = [], options = {}) {
 }
 
 function bindAdminTrackerActions() {
-  document.querySelectorAll('.booking-status-btn').forEach((btn) => {
-    btn.addEventListener('click', async () => {
-      await updateBookingPaymentState(String(btn.dataset.matchid || ''), String(btn.dataset.userid || ''), String(btn.dataset.status || 'paid'));
+  [els.adminActivityUsers, els.adminActivityList].forEach((root) => {
+    root?.querySelectorAll('.booking-status-btn').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        await updateBookingPaymentState(String(btn.dataset.matchid || ''), String(btn.dataset.userid || ''), String(btn.dataset.status || 'paid'));
+      });
     });
   });
 }
@@ -2404,20 +2570,31 @@ function renderAdminTrackerDashboard(items = []) {
 async function updateBookingPaymentState(matchId, userId, nextStatus = 'paid') {
   if (!matchId || !userId) return;
   try {
-    const entry = (state.adminTrackerEntries || []).find((item) => String(item.matchId) === String(matchId) && String(item.targetUserId) === String(userId));
+    let entry = (state.adminTrackerEntries || []).find((item) => String(item.matchId) === String(matchId) && String(item.targetUserId) === String(userId));
+
     if (!entry) {
-      showToast('Booking not found.');
-      return;
+      const bookingSnap = await getDoc(doc(db, 'matches', matchId, 'bookings', userId));
+      const matchSnap = await getDoc(doc(db, 'matches', matchId));
+      if (!bookingSnap.exists()) {
+        showToast('Booking not found.');
+        return;
+      }
+      entry = mapBookingToTrackerEntry(matchId, matchSnap.data() || {}, bookingSnap.data() || {});
     }
+
     const totalFee = Math.max(Number(entry.totalFee || 0), 0);
-    const normalized = String(nextStatus || 'paid').toLowerCase() === 'paid' ? 'paid' : 'due';
+    const markPaid = String(nextStatus || 'paid').toLowerCase() === 'paid';
+    const normalizedStatus = markPaid ? 'paid' : getUnpaidBookingStatus(entry.paymentMethod || 'On-spot');
+    const nextTotals = syncStoredPaymentTotals(entry, totalFee, normalizedStatus);
+
     await updateDoc(doc(db, 'matches', matchId, 'bookings', userId), {
-      paymentStatus: normalized,
-      paidAmount: normalized === 'paid' ? totalFee : 0,
-      dueAmount: normalized === 'paid' ? 0 : totalFee,
+      paymentStatus: normalizedStatus,
+      paidAmount: nextTotals.paidAmount,
+      dueAmount: nextTotals.dueAmount,
       updatedAt: serverTimestamp()
     });
-    showToast(normalized === 'paid' ? 'Payment marked as paid.' : 'Payment marked as due.');
+
+    showToast(markPaid ? 'Payment marked as paid.' : 'Payment marked as unpaid.');
     const entries = await loadAdminBookingTracker();
     renderAdminTrackerDashboard(entries);
   } catch (err) {
@@ -2699,49 +2876,27 @@ function renderPlayers(bookings) {
   const total = Number(state.featuredMatch.totalSlots || 0);
   const booked = getBookedSlots(bookings);
   const left = Math.max(total - booked, 0);
+  const roster = buildMatchRoster(state.featuredMatch, bookings);
 
   els.playersMeta.textContent = `${booked} booked | ${left} open`;
+  renderPlayerTeams(state.featuredMatch, bookings);
 
-  if (!bookings.length) {
+  if (!roster.length) {
     els.playersList.innerHTML = `<div class="empty-box">No one has booked yet.</div>`;
     return;
   }
 
   const isAdmin = state.user?.email === ADMIN_EMAIL;
 
-  const expandedPlayers = [];
-  bookings.forEach((b) => {
-    const ownerName = String(b.name || b.email || "Player").trim();
-    const slots = Math.max(Number(b.slots || 1), 1);
-    const extras = Array.isArray(b.extraPlayerNames) ? b.extraPlayerNames.map((n) => String(n || "").trim()).filter(Boolean) : [];
-    const names = [ownerName, ...extras].slice(0, slots);
-
-    while (names.length < slots) {
-      names.push(`Player ${names.length + 1}`);
-    }
-
-    names.forEach((n, idx) => {
-      expandedPlayers.push({
-        displayName: n,
-        ownerName,
-        userId: String(b.userId || ""),
-        isPrimary: idx === 0,
-        slots,
-        paymentMethod: String(b.paymentMethod || "N/A"),
-        totalFee: Number(b.totalFee || (Number(state.featuredMatch?.slotFee || b.slotFee || 0) * slots))
-      });
-    });
-  });
-
-  els.playersList.innerHTML = expandedPlayers.map((p, index) => {
-    const name = escapeHtml(p.displayName || "Player");
-    const owner = escapeHtml(p.ownerName || "Player");
-    const payment = escapeHtml(p.paymentMethod || "N/A");
-    const fee = Number.isFinite(Number(p.totalFee)) ? Number(p.totalFee) : 0;
-    const detailLine = p.isPrimary
+  els.playersList.innerHTML = roster.map((player, index) => {
+    const name = escapeHtml(player.displayName || 'Player');
+    const owner = escapeHtml(player.bookingOwnerName || 'Player');
+    const teamClass = player.teamCode === 'A' ? 'team-a' : player.teamCode === 'B' ? 'team-b' : 'unassigned';
+    const teamPill = `<span class="mini-team-pill ${teamClass}">${escapeHtml(player.teamLabel)}</span>`;
+    const detailLine = player.isPrimary
       ? (isAdmin
-        ? `<div>${payment} | ${p.slots} slot(s) | BDT ${fee}</div>`
-        : `<div>${p.slots} slot(s)</div>`)
+        ? `<div>${escapeHtml(player.paymentLabel)} | ${escapeHtml(player.paymentStatusLabel)} | ${player.slots} slot(s) | BDT ${player.totalFee}</div>`
+        : `<div>${player.slots} slot(s)</div>`)
       : `<div>Booked by ${owner}</div>`;
 
     return `
@@ -2750,19 +2905,20 @@ function renderPlayers(bookings) {
           <span class="player-order">${index + 1}</span>
           <div>
             <strong>${name}</strong>
+            <div>${teamPill}</div>
             ${detailLine}
           </div>
         </div>
-        ${isAdmin && p.isPrimary ? `<button class="kick-btn" data-userid="${p.userId}">Kick</button>` : ""}
+        ${isAdmin && player.isPrimary ? `<button class="kick-btn" data-userid="${escapeHtml(player.bookingUserId)}">Kick</button>` : ''}
       </div>
     `;
-  }).join("");
+  }).join('');
 
-  animateListEntrance(els.playersList, ".player-chip");
+  animateListEntrance(els.playersList, '.player-chip');
 
   if (isAdmin) {
-    els.playersList.querySelectorAll(".kick-btn").forEach((btn) => {
-      btn.addEventListener("click", async () => {
+    els.playersList.querySelectorAll('.kick-btn').forEach((btn) => {
+      btn.addEventListener('click', async () => {
         await kickPlayerDirect(state.featuredMatch.id, btn.dataset.userid);
       });
     });
@@ -2858,42 +3014,44 @@ function updateHero(match, bookings) {
   const myBooking = state.user ? bookings.find((b) => b.userId === state.user.uid) : null;
   const mySlots = Math.max(Number(myBooking?.slots || 0), 0);
   const canTakeMoreForUser = Math.max(MAX_TOTAL_SLOTS_PER_USER - mySlots, 0);
-  const isClosed = match.status === "closed" || left <= 0 || canTakeMoreForUser <= 0;
+  const status = String(match.status || 'open').toLowerCase();
+  const isClosed = status === 'closed' || status === 'hold' || left <= 0 || canTakeMoreForUser <= 0;
 
   const lat = Number(match.latitude);
   const lng = Number(match.longitude);
   const hasCoords = Number.isFinite(lat) && Number.isFinite(lng);
   const photoUrls = Array.isArray(match.photoUrls) ? match.photoUrls.filter(Boolean) : [];
 
-  els.heroBadge.textContent = match.label || "Match";
-  els.heroVenue.textContent = match.location || "Venue";
+  els.heroBadge.textContent = match.label || 'Match';
+  els.heroVenue.textContent = match.location || 'Venue';
 
   if (photoUrls.length) {
     els.heroFieldImage.src = photoUrls[0];
-    els.heroFieldImage.classList.remove("hidden");
+    els.heroFieldImage.classList.remove('hidden');
   } else if (match.mapImage) {
     els.heroFieldImage.src = match.mapImage;
-    els.heroFieldImage.classList.remove("hidden");
+    els.heroFieldImage.classList.remove('hidden');
   } else {
-    els.heroFieldImage.classList.add("hidden");
+    els.heroFieldImage.classList.add('hidden');
   }
 
   if (hasCoords && els.heroMapWrap && els.heroMapFrame && els.heroMapLink) {
     els.heroMapFrame.src = getGoogleMapsEmbedUrl(lat, lng);
     els.heroMapLink.href = getGoogleMapsUrl(lat, lng);
-    els.heroMapWrap.classList.remove("hidden");
+    els.heroMapWrap.classList.remove('hidden');
   } else {
-    els.heroMapWrap?.classList.add("hidden");
+    els.heroMapWrap?.classList.add('hidden');
   }
 
   renderVenuePhotos(photoUrls);
 
   els.heroDate.textContent = formatMatchDate(match.date, match.time);
   els.heroPlayers.textContent = `${booked} / ${total}`;
-  const feeText = Number.isFinite(Number(match.slotFee)) ? `BDT ${Number(match.slotFee)}` : "Set by admin";
-  els.heroPayment.textContent = feeText;
-  els.heroSlotsText.textContent = left > 0 ? `${left} SLOTS LEFT` : "MATCH FULL";
-  els.heroSlotsText.classList.toggle("full", left <= 0);
+  els.heroPayment.textContent = Number.isFinite(Number(match.slotFee)) ? `BDT ${Number(match.slotFee)}` : 'Set by admin';
+  if (status === 'hold') els.heroSlotsText.textContent = 'MATCH ON HOLD';
+  else if (status === 'closed') els.heroSlotsText.textContent = 'MATCH CLOSED';
+  else els.heroSlotsText.textContent = left > 0 ? `${left} SLOTS LEFT` : 'MATCH FULL';
+  els.heroSlotsText.classList.toggle('full', status !== 'open' || left <= 0);
   els.heroPercent.textContent = `${percent}%`;
   els.heroProgress.style.width = `${percent}%`;
   els.heroBookBtn.disabled = isClosed;
@@ -2904,7 +3062,7 @@ function updateHero(match, bookings) {
     const maxCanBook = Math.max(Math.min(left, canTakeMoreForUser), 1);
     els.heroSlotQty.max = String(maxCanBook);
     if (Number(els.heroSlotQty.value) > maxCanBook) els.heroSlotQty.value = String(maxCanBook);
-    if (Number(els.heroSlotQty.value) < 1) els.heroSlotQty.value = "1";
+    if (Number(els.heroSlotQty.value) < 1) els.heroSlotQty.value = '1';
   }
   refreshBookingPreview();
   injectUiIcons();
@@ -2929,41 +3087,41 @@ function listenBookingsForMatch(matchId) {
 
 function listenFeaturedMatches() {
   state.featuredUnsub?.();
-  state.featuredUnsub = onSnapshot(collection(db, "matches"), (snap) => {
+  state.featuredUnsub = onSnapshot(collection(db, 'matches'), (snap) => {
     const docs = snap.docs
       .map((d) => ({ id: d.id, ...d.data() }))
       .sort((a, b) => {
-        const as = (a.status || "").toLowerCase() === "open" ? 0 : 1;
-        const bs = (b.status || "").toLowerCase() === "open" ? 0 : 1;
-        if (as !== bs) return as - bs;
-        const at = Date.parse(`${a.date || "1970-01-01"}T${a.time || "00:00:00"}`) || 0;
-        const bt = Date.parse(`${b.date || "1970-01-01"}T${b.time || "00:00:00"}`) || 0;
+        const statusDiff = getMatchStatusPriority(a.status) - getMatchStatusPriority(b.status);
+        if (statusDiff !== 0) return statusDiff;
+        const at = Date.parse(`${a.date || '1970-01-01'}T${a.time || '00:00:00'}`) || 0;
+        const bt = Date.parse(`${b.date || '1970-01-01'}T${b.time || '00:00:00'}`) || 0;
         return bt - at;
       });
 
     const top = docs[0];
     if (!top) {
       state.featuredMatch = null;
-      els.heroBadge.textContent = "No match";
-      els.heroVenue.textContent = "No match scheduled";
-      els.heroFieldImage.classList.add("hidden");
-      els.heroMapWrap?.classList.add("hidden");
+      els.heroBadge.textContent = 'No match';
+      els.heroVenue.textContent = 'No match scheduled';
+      els.heroFieldImage.classList.add('hidden');
+      els.heroMapWrap?.classList.add('hidden');
       renderVenuePhotos([]);
-      els.heroDate.textContent = "No match is scheduled right now.";
-      els.heroPlayers.textContent = "0 / 0";
-      els.heroPayment.textContent = "Set by admin";
-      els.heroSlotsText.textContent = "NO MATCH";
-      els.heroSlotsText.classList.remove("full");
-      els.heroPercent.textContent = "0%";
-      els.heroProgress.style.width = "0%";
-      els.playersMeta.textContent = "";
+      els.heroDate.textContent = 'No match is scheduled right now.';
+      els.heroPlayers.textContent = '0 / 0';
+      els.heroPayment.textContent = 'Set by admin';
+      els.heroSlotsText.textContent = 'NO MATCH';
+      els.heroSlotsText.classList.remove('full');
+      els.heroPercent.textContent = '0%';
+      els.heroProgress.style.width = '0%';
+      els.playersMeta.textContent = '';
       els.playersList.innerHTML = `<div class="empty-box">No match is scheduled right now.</div>`;
+      if (els.matchTeamsBoard) els.matchTeamsBoard.innerHTML = `<div class="empty-box">No teams available right now.</div>`;
       els.heroBookBtn.disabled = true;
       els.heroDownloadBtn.disabled = true;
       els.heroCancelBtn.disabled = true;
-      if (els.heroSlotQty) els.heroSlotQty.value = "1";
+      if (els.heroSlotQty) els.heroSlotQty.value = '1';
       refreshBookingPreview();
-  injectUiIcons();
+      injectUiIcons();
       return;
     }
 
@@ -2972,6 +3130,7 @@ function listenFeaturedMatches() {
   }, (err) => {
     console.error(err);
     if (els.playersList) els.playersList.innerHTML = `<div class="empty-box">Could not load match right now.</div>`;
+    if (els.matchTeamsBoard) els.matchTeamsBoard.innerHTML = `<div class="empty-box">Could not load teams right now.</div>`;
   });
 }
 
@@ -3270,94 +3429,466 @@ async function createMatch(e) {
   }
 }
 
+function renderAdminMatchTeamBoard(match = {}, roster = []) {
+  return renderTeamBoard(getRosterTeamGroups(match, roster), { emptyMessage: 'No players assigned.' });
+}
+
+async function addManualPlayerDirect(matchId, payload = {}) {
+  const name = String(payload.name || '').trim();
+  if (!name) {
+    showToast('Enter a player name first.');
+    return;
+  }
+
+  const matchSnap = await getDoc(doc(db, 'matches', matchId));
+  if (!matchSnap.exists()) {
+    showToast('Match not found.');
+    return;
+  }
+
+  const match = matchSnap.data() || {};
+  const extraPlayerNames = String(payload.extraPlayers || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .slice(0, MAX_TOTAL_SLOTS_PER_USER - 1);
+  const slots = 1 + extraPlayerNames.length;
+  const paymentMethod = payload.paymentMethod || 'On-spot';
+  const requestedPaid = String(payload.paymentState || 'unpaid').toLowerCase() === 'paid';
+  const paymentStatus = requestedPaid ? 'paid' : getUnpaidBookingStatus(paymentMethod);
+  const totalFee = Number(match.slotFee || 0) * slots;
+  const amounts = syncStoredPaymentTotals({ paymentMethod }, totalFee, paymentStatus);
+  const manualId = `manual-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+  await setDoc(doc(db, 'matches', matchId, 'bookings', manualId), {
+    userId: manualId,
+    email: String(payload.email || '').trim(),
+    name,
+    paymentMethod,
+    paymentStatus,
+    dueAmount: amounts.dueAmount,
+    paidAmount: amounts.paidAmount,
+    matchLabel: match.label || 'Match',
+    matchLocation: match.location || 'Venue',
+    slotFee: Number(match.slotFee || 0),
+    slots,
+    extraPlayerNames,
+    totalFee,
+    manualEntry: true,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp()
+  });
+
+  showToast('Player added to the match.');
+}
+
+async function updateMatchCapacityDirect(matchId, nextTotal, bookedCount) {
+  const totalSlots = Math.max(Number(nextTotal || 0), 0);
+  if (!totalSlots) {
+    showToast('Enter a valid slot total.');
+    return;
+  }
+  if (totalSlots < bookedCount) {
+    showToast(`Slots cannot go below ${bookedCount} booked spot(s).`);
+    return;
+  }
+  await updateDoc(doc(db, 'matches', matchId), {
+    totalSlots,
+    updatedAt: serverTimestamp()
+  });
+  showToast('Match slots updated.');
+}
+
+async function updateMatchStatusDirect(matchId, nextStatus = 'open') {
+  await updateDoc(doc(db, 'matches', matchId), {
+    status: nextStatus,
+    updatedAt: serverTimestamp()
+  });
+  showToast(`Match marked ${getMatchStatusLabel(nextStatus).toLowerCase()}.`);
+}
+
+async function deleteMatchDirect(matchId) {
+  if (!window.confirm('Delete this match and all its bookings?')) return;
+
+  const bookingsSnap = await getDocs(collection(db, 'matches', matchId, 'bookings'));
+  await Promise.all(bookingsSnap.docs.map((docSnap) => deleteDoc(docSnap.ref)));
+  await deleteDoc(doc(db, 'matches', matchId));
+
+  if (state.adminSelectedMatchId === matchId) {
+    state.adminSelectedMatchId = '';
+    state.adminTrackerFilter = 'all';
+  }
+  showToast('Match deleted.');
+}
+
+async function assignRosterTeamDirect(matchId, entryKey, nextTeam = '') {
+  const matchRef = doc(db, 'matches', matchId);
+  const matchSnap = await getDoc(matchRef);
+  if (!matchSnap.exists()) return;
+
+  const match = matchSnap.data() || {};
+  const nextAssignments = match.teamAssignments && typeof match.teamAssignments === 'object'
+    ? { ...match.teamAssignments }
+    : {};
+  const normalized = String(nextTeam || '').toUpperCase();
+
+  if (normalized === 'A' || normalized === 'B') nextAssignments[entryKey] = normalized;
+  else delete nextAssignments[entryKey];
+
+  await updateDoc(matchRef, {
+    teamAssignments: nextAssignments,
+    updatedAt: serverTimestamp()
+  });
+}
+
+async function autoDivideMatchTeamsDirect(matchId, roster = []) {
+  if (!roster.length) {
+    showToast('Add players first.');
+    return;
+  }
+
+  const nextAssignments = {};
+  [...roster]
+    .sort((a, b) => String(a.displayName || '').localeCompare(String(b.displayName || '')))
+    .forEach((player, index) => {
+      nextAssignments[player.entryKey] = index % 2 === 0 ? 'A' : 'B';
+    });
+
+  await updateDoc(doc(db, 'matches', matchId), {
+    teamAssignments: nextAssignments,
+    updatedAt: serverTimestamp()
+  });
+  showToast('Teams divided.');
+}
+
+async function clearMatchTeamsDirect(matchId) {
+  await updateDoc(doc(db, 'matches', matchId), {
+    teamAssignments: {},
+    updatedAt: serverTimestamp()
+  });
+  showToast('Teams cleared.');
+}
+
+async function removeRosterEntryDirect(matchId, userId, options = {}) {
+  const bookingRef = doc(db, 'matches', matchId, 'bookings', userId);
+  const bookingSnap = await getDoc(bookingRef);
+  if (!bookingSnap.exists()) {
+    showToast('Player booking not found.');
+    return;
+  }
+
+  const booking = bookingSnap.data() || {};
+  const slots = Math.max(Number(booking.slots || 1), 1);
+  const extraPlayerNames = Array.isArray(booking.extraPlayerNames) ? [...booking.extraPlayerNames] : [];
+  const isPrimary = options.isPrimary === true;
+  const guestIndex = Number(options.guestIndex);
+  const slotFee = Number(booking.slotFee || 0);
+
+  if (isPrimary) {
+    if (slots <= 1) {
+      await deleteDoc(bookingRef);
+      showToast('Player removed.');
+      return;
+    }
+
+    const nextPrimary = extraPlayerNames.shift();
+    if (!nextPrimary) {
+      await deleteDoc(bookingRef);
+      showToast('Booking removed.');
+      return;
+    }
+
+    const nextSlots = Math.max(slots - 1, 1);
+    const totalFee = slotFee * nextSlots;
+    const amounts = syncStoredPaymentTotals(booking, totalFee, booking.paymentStatus || getUnpaidBookingStatus(booking.paymentMethod || 'On-spot'));
+    await updateDoc(bookingRef, {
+      name: nextPrimary,
+      slots: nextSlots,
+      extraPlayerNames,
+      totalFee,
+      paidAmount: amounts.paidAmount,
+      dueAmount: amounts.dueAmount,
+      updatedAt: serverTimestamp()
+    });
+    showToast('Primary player removed and roster updated.');
+    return;
+  }
+
+  if (!Number.isInteger(guestIndex) || guestIndex < 0) {
+    showToast('Guest player not found.');
+    return;
+  }
+
+  extraPlayerNames.splice(guestIndex, 1);
+  const nextSlots = Math.max(slots - 1, 1);
+  const totalFee = slotFee * nextSlots;
+  const amounts = syncStoredPaymentTotals(booking, totalFee, booking.paymentStatus || getUnpaidBookingStatus(booking.paymentMethod || 'On-spot'));
+  await updateDoc(bookingRef, {
+    slots: nextSlots,
+    extraPlayerNames,
+    totalFee,
+    paidAmount: amounts.paidAmount,
+    dueAmount: amounts.dueAmount,
+    updatedAt: serverTimestamp()
+  });
+  showToast('Player removed from the roster.');
+}
+
+function renderAdminMatchesFromCache() {
+  if (!els.adminMatchesList) return;
+  const rows = Array.isArray(state.adminMatchesCache) ? state.adminMatchesCache : [];
+
+  if (!rows.length) {
+    els.adminMatchesList.innerHTML = `<div class="empty-box">No matches yet.</div>`;
+    return;
+  }
+
+  if (!rows.some((row) => row.id === state.adminSelectedMatchId)) {
+    state.adminSelectedMatchId = rows[0]?.id || '';
+  }
+
+  const cards = rows.map((row) => {
+    const match = row.data || {};
+    const bookings = Array.isArray(row.bookings) ? row.bookings : [];
+    const roster = buildMatchRoster({ id: row.id, ...match }, bookings);
+    const booked = getBookedSlots(bookings);
+    const openSlots = Math.max(Number(match.totalSlots || 0) - booked, 0);
+    const status = String(match.status || 'open').toLowerCase();
+    const isExpanded = state.adminSelectedMatchId === row.id;
+    const groups = getRosterTeamGroups(match, roster);
+    const paymentTotals = bookings.reduce((acc, booking) => {
+      const slots = Math.max(Number(booking.slots || 1), 1);
+      const totalFee = Number(booking.totalFee || (Number(booking.slotFee || match.slotFee || 0) * slots));
+      const pay = getStoredPaymentDetails({ ...booking, totalFee });
+      acc.paid += pay.paidAmount;
+      acc.due += pay.dueAmount;
+      return acc;
+    }, { paid: 0, due: 0 });
+
+    const rosterRows = roster.length ? roster.map((player) => {
+      const nextPaymentState = player.paymentStatusLabel.toLowerCase() === 'paid' ? 'unpaid' : 'paid';
+      const paymentLabel = player.paymentStatusLabel.toLowerCase() === 'paid' ? 'Mark unpaid' : 'Mark paid';
+      const teamClass = player.teamCode === 'A' ? 'team-a' : player.teamCode === 'B' ? 'team-b' : 'unassigned';
+      const teamHint = player.isPrimary ? 'Booking owner' : `Booked by ${player.bookingOwnerName || 'Player'}`;
+      return `
+        <div class="admin-player-row">
+          <div class="admin-player-copy">
+            <strong>${escapeHtml(player.displayName || 'Player')} <span class="mini-team-pill ${teamClass}">${escapeHtml(player.teamLabel)}</span></strong>
+            <div class="muted">${escapeHtml(teamHint)}</div>
+            <div class="muted">${escapeHtml(player.paymentLabel)} | ${escapeHtml(player.paymentStatusLabel)} | Paid BDT ${player.paidAmount} | Due BDT ${player.dueAmount}</div>
+            <div class="muted">Booking owner: ${escapeHtml(player.bookingOwnerName || 'Player')} ${player.bookingEmail ? `| ${escapeHtml(player.bookingEmail)}` : ''}</div>
+          </div>
+          <div class="admin-player-actions">
+            <button class="secondary-btn compact-btn booking-status-btn" type="button" data-matchid="${escapeHtml(row.id)}" data-userid="${escapeHtml(player.bookingUserId)}" data-status="${escapeHtml(nextPaymentState)}">${paymentLabel}</button>
+            <div class="team-assign-row">
+              <button class="secondary-btn compact-btn team-assign-btn${player.teamCode === 'A' ? ' active' : ''}" type="button" data-matchid="${escapeHtml(row.id)}" data-entrykey="${escapeHtml(player.entryKey)}" data-team="A">Team A</button>
+              <button class="secondary-btn compact-btn team-assign-btn${player.teamCode === 'B' ? ' active' : ''}" type="button" data-matchid="${escapeHtml(row.id)}" data-entrykey="${escapeHtml(player.entryKey)}" data-team="B">Team B</button>
+              <button class="ghost-btn compact-btn team-assign-btn${!player.teamCode ? ' active' : ''}" type="button" data-matchid="${escapeHtml(row.id)}" data-entrykey="${escapeHtml(player.entryKey)}" data-team="">Clear</button>
+            </div>
+            <button class="kick-btn compact-btn remove-roster-btn" type="button" data-matchid="${escapeHtml(row.id)}" data-userid="${escapeHtml(player.bookingUserId)}" data-primary="${player.isPrimary}" data-guestindex="${player.guestIndex}">${player.isPrimary ? 'Remove booking' : 'Remove player'}</button>
+          </div>
+        </div>
+      `;
+    }).join('') : `<div class="empty-box">No players booked yet.</div>`;
+
+    return `
+      <div class="admin-match-card${isExpanded ? ' is-expanded' : ''}">
+        <div class="admin-match-head">
+          <div class="admin-match-meta">
+            <strong>${escapeHtml(match.location || 'Venue')}</strong>
+            <div class="muted">${escapeHtml(match.label || 'Match')}</div>
+            <div class="muted">${escapeHtml(formatMatchDate(match.date, match.time))}</div>
+            <div class="admin-match-status-line">
+              <span class="admin-status-pill ${escapeHtml(status)}">${escapeHtml(getMatchStatusLabel(status))}</span>
+              <span class="muted">${booked} / ${Number(match.totalSlots || 0)} booked</span>
+              <span class="muted">Open slots: ${openSlots}</span>
+              <span class="muted">Fee: BDT ${Number(match.slotFee || 0)}</span>
+            </div>
+            ${match.mapImage ? `<img class="admin-map-thumb" src="${escapeHtml(match.mapImage)}" alt="Map preview" />` : ''}
+          </div>
+          <div class="admin-actions">
+            <button class="secondary-btn manage-match-btn" type="button" data-matchid="${escapeHtml(row.id)}">${isExpanded ? 'Hide controls' : 'Manage match'}</button>
+            <button class="ghost-btn compact-btn match-status-btn" type="button" data-matchid="${escapeHtml(row.id)}" data-status="hold">Hold</button>
+            <button class="ghost-btn compact-btn match-status-btn" type="button" data-matchid="${escapeHtml(row.id)}" data-status="${status === 'closed' ? 'open' : 'closed'}">${status === 'closed' ? 'Reopen' : 'Close'}</button>
+            <button class="kick-btn compact-btn delete-match-btn" type="button" data-matchid="${escapeHtml(row.id)}">Delete</button>
+          </div>
+        </div>
+        ${isExpanded ? `
+          <div class="admin-match-detail">
+            <div class="admin-match-summary">
+              <article class="analytics-card"><div class="panel-label">Booked</div><strong>${booked}</strong></article>
+              <article class="analytics-card"><div class="panel-label">Open</div><strong>${openSlots}</strong></article>
+              <article class="analytics-card"><div class="panel-label">Paid</div><strong>BDT ${paymentTotals.paid}</strong></article>
+              <article class="analytics-card"><div class="panel-label">Due</div><strong>BDT ${paymentTotals.due}</strong></article>
+              <article class="analytics-card"><div class="panel-label">Teams</div><strong>${groups.a.length} / ${groups.b.length}</strong></article>
+            </div>
+            <div class="admin-match-toolbar">
+              <form class="admin-slots-form" data-matchid="${escapeHtml(row.id)}" data-booked="${booked}">
+                <label for="matchSlots-${escapeHtml(row.id)}">Match slots</label>
+                <input id="matchSlots-${escapeHtml(row.id)}" class="admin-inline-input small" name="totalSlots" type="number" min="${booked || 1}" value="${Number(match.totalSlots || 0)}" />
+                <button class="secondary-btn compact-btn" type="submit">Save slots</button>
+              </form>
+              <div class="admin-actions">
+                <button class="secondary-btn compact-btn auto-team-btn" type="button" data-matchid="${escapeHtml(row.id)}">Auto divide</button>
+                <button class="ghost-btn compact-btn clear-team-btn" type="button" data-matchid="${escapeHtml(row.id)}">Clear teams</button>
+                <button class="ghost-btn compact-btn match-status-btn" type="button" data-matchid="${escapeHtml(row.id)}" data-status="open">Open</button>
+              </div>
+            </div>
+            <div class="admin-detail-section">
+              <div>
+                <div class="panel-label">Add player manually</div>
+                <h4>Roster control</h4>
+              </div>
+              <form class="admin-player-add-form" data-matchid="${escapeHtml(row.id)}">
+                <input class="admin-inline-input flex" name="playerName" type="text" placeholder="Player name" />
+                <input class="admin-inline-input flex" name="playerEmail" type="text" placeholder="Email or phone (optional)" />
+                <input class="admin-inline-input flex" name="extraPlayers" type="text" placeholder="Other players, comma separated" />
+                <select class="admin-inline-select" name="paymentMethod">
+                  <option value="On-spot">On-spot</option>
+                  <option value="bKash">bKash</option>
+                </select>
+                <select class="admin-inline-select" name="paymentState">
+                  <option value="unpaid">Due / Unpaid</option>
+                  <option value="paid">Paid</option>
+                </select>
+                <button class="primary-btn compact-btn" type="submit">Add player</button>
+              </form>
+              <div class="admin-booking-list admin-player-grid">${rosterRows}</div>
+            </div>
+            <div class="admin-detail-section">
+              <div>
+                <div class="panel-label">Team division</div>
+                <h4>Visible to players</h4>
+              </div>
+              <div class="match-teams-board">${renderAdminMatchTeamBoard(match, roster)}</div>
+            </div>
+          </div>
+        ` : ''}
+      </div>
+    `;
+  });
+
+  els.adminMatchesList.innerHTML = cards.join('');
+  bindAdminMatchCardActions();
+  injectUiIcons();
+}
+
+function bindAdminMatchCardActions() {
+  els.adminMatchesList?.querySelectorAll('.manage-match-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const matchId = String(btn.dataset.matchid || '');
+      state.adminSelectedMatchId = state.adminSelectedMatchId === matchId ? '' : matchId;
+      state.adminTrackerFilter = state.adminSelectedMatchId || 'all';
+      renderAdminMatchesFromCache();
+      renderAdminTrackerDashboard(state.adminTrackerEntries || []);
+    });
+  });
+
+  els.adminMatchesList?.querySelectorAll('.match-status-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      await updateMatchStatusDirect(String(btn.dataset.matchid || ''), String(btn.dataset.status || 'open'));
+    });
+  });
+
+  els.adminMatchesList?.querySelectorAll('.delete-match-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      await deleteMatchDirect(String(btn.dataset.matchid || ''));
+    });
+  });
+
+  els.adminMatchesList?.querySelectorAll('.admin-slots-form').forEach((form) => {
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      await updateMatchCapacityDirect(String(form.dataset.matchid || ''), Number(form.totalSlots?.value || 0), Number(form.dataset.booked || 0));
+    });
+  });
+
+  els.adminMatchesList?.querySelectorAll('.admin-player-add-form').forEach((form) => {
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      await addManualPlayerDirect(String(form.dataset.matchid || ''), {
+        name: form.playerName?.value,
+        email: form.playerEmail?.value,
+        extraPlayers: form.extraPlayers?.value,
+        paymentMethod: form.paymentMethod?.value,
+        paymentState: form.paymentState?.value
+      });
+      form.reset();
+    });
+  });
+
+  els.adminMatchesList?.querySelectorAll('.team-assign-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      await assignRosterTeamDirect(String(btn.dataset.matchid || ''), String(btn.dataset.entrykey || ''), String(btn.dataset.team || ''));
+    });
+  });
+
+  els.adminMatchesList?.querySelectorAll('.auto-team-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const matchId = String(btn.dataset.matchid || '');
+      const row = (state.adminMatchesCache || []).find((item) => item.id === matchId);
+      await autoDivideMatchTeamsDirect(matchId, buildMatchRoster(row?.data || {}, row?.bookings || []));
+    });
+  });
+
+  els.adminMatchesList?.querySelectorAll('.clear-team-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      await clearMatchTeamsDirect(String(btn.dataset.matchid || ''));
+    });
+  });
+
+  els.adminMatchesList?.querySelectorAll('.booking-status-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      await updateBookingPaymentState(String(btn.dataset.matchid || ''), String(btn.dataset.userid || ''), String(btn.dataset.status || 'paid'));
+    });
+  });
+
+  els.adminMatchesList?.querySelectorAll('.remove-roster-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      await removeRosterEntryDirect(String(btn.dataset.matchid || ''), String(btn.dataset.userid || ''), {
+        isPrimary: String(btn.dataset.primary || '') === 'true',
+        guestIndex: Number(btn.dataset.guestindex || -1)
+      });
+    });
+  });
+}
+
 function listenAdminMatches() {
   state.adminMatchesUnsub?.();
   state.adminMatchesUnsub = onSnapshot(
-    collection(db, "matches"),
+    collection(db, 'matches'),
     async (snap) => {
       if (snap.empty) {
+        state.adminMatchesCache = [];
+        state.adminSelectedMatchId = '';
         els.adminMatchesList.innerHTML = `<div class="empty-box">No matches yet.</div>`;
         return;
       }
 
       const orderedDocs = snap.docs
-        .map((d) => ({ id: d.id, data: d.data() }))
+        .map((docSnap) => ({ id: docSnap.id, data: docSnap.data() || {} }))
         .sort((a, b) => {
-          const at = a.data.createdAt?.toDate?.()?.getTime?.() || 0;
-          const bt = b.data.createdAt?.toDate?.()?.getTime?.() || 0;
+          const statusDiff = getMatchStatusPriority(a.data.status) - getMatchStatusPriority(b.data.status);
+          if (statusDiff !== 0) return statusDiff;
+          const at = Date.parse(`${a.data.date || '1970-01-01'}T${a.data.time || '00:00:00'}`) || 0;
+          const bt = Date.parse(`${b.data.date || '1970-01-01'}T${b.data.time || '00:00:00'}`) || 0;
           return bt - at;
         });
 
-      const cards = [];
-      for (const row of orderedDocs) {
-        const d = { id: row.id };
-        const m = row.data;
-        const bookingDocs = await getDocs(collection(db, "matches", d.id, "bookings"));
-        const bookings = bookingDocs.docs.map((b) => b.data() || {});
-        const booked = getBookedSlots(bookings);
-        const bookingRows = bookings.length ? bookings.map((booking) => {
-          const entry = mapBookingToTrackerEntry(d.id, m, booking);
-          const pay = getStoredPaymentDetails(entry);
-          const names = [entry.targetName || entry.actorName || 'Player', ...(Array.isArray(entry.extraPlayerNames) ? entry.extraPlayerNames : [])].filter(Boolean).join(', ');
-          const nextStatus = pay.status.toLowerCase() === 'paid' ? 'due' : 'paid';
-          const actionLabel = pay.status.toLowerCase() === 'paid' ? 'Mark due' : 'Mark paid';
-          return `
-            <div class="admin-booking-row">
-              <div class="admin-booking-copy">
-                <strong>${escapeHtml(entry.targetName || entry.actorName || 'Player')}</strong>
-                <div class="muted">${escapeHtml(entry.targetEmail || entry.actorEmail || '')}</div>
-                <div class="muted">Players: ${escapeHtml(names || 'Player')}</div>
-                <div class="muted">${Math.max(Number(entry.slotsAdded || 0), 0)} slot(s) | ${escapeHtml(pay.methodLabel)} | ${escapeHtml(pay.status)} | Paid BDT ${pay.paidAmount} | Due BDT ${pay.dueAmount}</div>
-              </div>
-              <div class="admin-booking-actions">
-                <button class="secondary-btn compact-btn booking-status-btn" type="button" data-matchid="${escapeHtml(d.id)}" data-userid="${escapeHtml(entry.targetUserId || '')}" data-status="${escapeHtml(nextStatus)}">${actionLabel}</button>
-                <button class="ghost-btn compact-btn kick-btn" type="button" data-matchid="${escapeHtml(d.id)}" data-userid="${escapeHtml(entry.targetUserId || '')}">Remove</button>
-              </div>
-            </div>
-          `;
-        }).join('') : `<div class="empty-box">No players booked yet.</div>`;
+      state.adminMatchesCache = await Promise.all(orderedDocs.map(async (row) => {
+        const bookingsSnap = await getDocs(collection(db, 'matches', row.id, 'bookings'));
+        return {
+          id: row.id,
+          data: row.data,
+          bookings: bookingsSnap.docs.map((docSnap) => docSnap.data() || {})
+        };
+      }));
 
-        cards.push(`
-          <div class="admin-match-card">
-            <div>
-              <strong>${escapeHtml(m.location || "Venue")}</strong>
-              <div class="muted">${escapeHtml(formatMatchDate(m.date, m.time))}</div>
-              <div class="muted">${booked} / ${m.totalSlots} booked | ${m.status}</div>
-              <div class="muted">Fee: BDT ${Number(m.slotFee || 0)}</div>
-              ${m.mapImage ? `<img class="admin-map-thumb" src="${escapeHtml(m.mapImage)}" alt="Map preview" />` : ""}
-            </div>
-            <div class="admin-actions">
-              <button class="secondary-btn toggle-match-btn" data-id="${d.id}" data-status="${m.status}">
-                ${m.status === "open" ? "Close" : "Reopen"}
-              </button>
-            </div>
-            <div class="admin-booking-list">${bookingRows}</div>
-          </div>
-        `);
+      if (!state.adminMatchesCache.some((row) => row.id === state.adminSelectedMatchId)) {
+        state.adminSelectedMatchId = state.adminMatchesCache[0]?.id || '';
       }
 
-      els.adminMatchesList.innerHTML = cards.join("");
-
-      els.adminMatchesList.querySelectorAll(".toggle-match-btn").forEach((btn) => {
-        btn.addEventListener("click", async () => {
-          const id = btn.dataset.id;
-          const nextStatus = btn.dataset.status === "open" ? "closed" : "open";
-          await updateDoc(doc(db, "matches", id), { status: nextStatus });
-          showToast(`Match ${nextStatus}.`);
-        });
-      });
-
-      els.adminMatchesList.querySelectorAll('.booking-status-btn').forEach((btn) => {
-        btn.addEventListener('click', async () => {
-          await updateBookingPaymentState(String(btn.dataset.matchid || ''), String(btn.dataset.userid || ''), String(btn.dataset.status || 'paid'));
-        });
-      });
-
-      els.adminMatchesList.querySelectorAll('.kick-btn').forEach((btn) => {
-        btn.addEventListener('click', async () => {
-          await kickPlayerDirect(String(btn.dataset.matchid || ''), String(btn.dataset.userid || ''));
-        });
-      });
+      renderAdminMatchesFromCache();
     },
     (err) => {
       console.error(err);
@@ -3365,6 +3896,7 @@ function listenAdminMatches() {
     }
   );
 }
+
 async function editAnnouncement(id) {
   try {
     const nextText = window.prompt("Edit announcement:");
