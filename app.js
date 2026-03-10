@@ -2190,10 +2190,60 @@ function renderActivityAction(action) {
   return action || "Updated";
 }
 
+function formatTrackerMatchMeta(entry = {}) {
+  const when = entry.matchDate ? formatMatchDate(entry.matchDate, entry.matchTime || "") : (entry.whenText || "");
+  return [entry.matchLabel || "Match", when, entry.matchLocation || "Venue"].filter(Boolean).join(" | ");
+}
+
+function getAdminTrackerFilterOptions(items = []) {
+  const seen = new Set();
+  return items.filter((item) => {
+    const key = String(item.matchId || "unknown");
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function filterAdminTrackerEntries(items = []) {
+  if (state.adminTrackerFilter === "all") return items;
+  return items.filter((item) => String(item.matchId || "") === String(state.adminTrackerFilter || ""));
+}
+
+function renderAdminTrackerFilters(items = []) {
+  if (!els.adminTrackerFilters) return;
+
+  const options = getAdminTrackerFilterOptions(items);
+  if (state.adminTrackerFilter !== "all" && !options.some((item) => String(item.matchId || "") === String(state.adminTrackerFilter))) {
+    state.adminTrackerFilter = "all";
+  }
+
+  const allCount = items.length;
+  const html = [
+    `<button class="tracker-filter-btn${state.adminTrackerFilter === "all" ? " active" : ""}" type="button" data-matchfilter="all">All bookings <span>${allCount}</span></button>`,
+    ...options.map((item) => {
+      const key = String(item.matchId || "");
+      const count = items.filter((row) => String(row.matchId || "") === key).length;
+      const label = escapeHtml(formatTrackerMatchMeta(item));
+      const active = state.adminTrackerFilter === key ? " active" : "";
+      return `<button class="tracker-filter-btn${active}" type="button" data-matchfilter="${escapeHtml(key)}">${label} <span>${count}</span></button>`;
+    })
+  ].join("");
+
+  els.adminTrackerFilters.innerHTML = html;
+  els.adminTrackerFilters.querySelectorAll('.tracker-filter-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      state.adminTrackerFilter = String(btn.dataset.matchfilter || 'all');
+      renderAdminTrackerDashboard(state.adminTrackerEntries || []);
+    });
+  });
+}
+
 function renderAdminActivitySummary(items = []) {
   if (!els.adminActivitySummary) return;
 
-  const totals = items.reduce((acc, item) => {
+  const filtered = filterAdminTrackerEntries(items);
+  const totals = filtered.reduce((acc, item) => {
     const pay = getStoredPaymentDetails(item);
     acc.players += 1;
     acc.slots += Math.max(Number(item.slotsAdded || item.slots || 0), 0);
@@ -2217,12 +2267,13 @@ function renderAdminActivitySummary(items = []) {
 function renderAdminUserStats(items = []) {
   if (!els.adminActivityUsers) return;
 
-  if (!items.length) {
-    els.adminActivityUsers.innerHTML = `<div class="empty-box">No player bookings yet.</div>`;
+  const filtered = filterAdminTrackerEntries(items);
+  if (!filtered.length) {
+    els.adminActivityUsers.innerHTML = `<div class="empty-box">No player bookings for this match yet.</div>`;
     return;
   }
 
-  const rows = [...items].sort((a, b) => {
+  const rows = [...filtered].sort((a, b) => {
     const dueDiff = Math.max(Number(b.dueAmount || 0), 0) - Math.max(Number(a.dueAmount || 0), 0);
     if (dueDiff !== 0) return dueDiff;
     return (b.createdAt?.toDate?.()?.getTime?.() || 0) - (a.createdAt?.toDate?.()?.getTime?.() || 0);
@@ -2232,25 +2283,28 @@ function renderAdminUserStats(items = []) {
     <div class="stats-table-wrap">
       <table class="stats-table">
         <thead>
-          <tr><th>Player</th><th>Match</th><th>Slots</th><th>Payment</th><th>Status</th><th>Paid</th><th>Due</th><th>Updated</th></tr>
+          <tr><th>Player</th><th>Match</th><th>Booked players</th><th>Slots</th><th>Payment</th><th>Status</th><th>Paid</th><th>Due</th><th>Action</th></tr>
         </thead>
         <tbody>
           ${rows.map((item) => {
             const pay = getStoredPaymentDetails(item);
-            const updated = item.createdAt?.toDate?.() ? item.createdAt.toDate().toLocaleString() : (item.whenText || "");
+            const names = [item.targetName || item.actorName || "Player", ...(Array.isArray(item.extraPlayerNames) ? item.extraPlayerNames : [])].filter(Boolean);
+            const actionLabel = pay.status.toLowerCase() === 'paid' ? 'Mark due' : 'Mark paid';
+            const nextStatus = pay.status.toLowerCase() === 'paid' ? 'due' : 'paid';
             return `
               <tr>
                 <td><strong>${escapeHtml(item.targetName || item.actorName || "Player")}</strong><div class="muted">${escapeHtml(item.targetEmail || item.actorEmail || "")}</div></td>
-                <td>${escapeHtml(item.matchLocation || item.matchLabel || item.matchId || "Match")}</td>
+                <td>${escapeHtml(formatTrackerMatchMeta(item))}</td>
+                <td>${escapeHtml(names.join(', ') || 'Player')}</td>
                 <td>${Math.max(Number(item.slotsAdded || item.slots || 0), 0)}</td>
                 <td>${escapeHtml(pay.methodLabel)}</td>
                 <td>${escapeHtml(pay.status)}</td>
                 <td>${pay.paidAmount}</td>
                 <td>${pay.dueAmount}</td>
-                <td>${escapeHtml(updated)}</td>
+                <td><button class="secondary-btn compact-btn booking-status-btn" type="button" data-matchid="${escapeHtml(item.matchId || '')}" data-userid="${escapeHtml(item.targetUserId || '')}" data-status="${escapeHtml(nextStatus)}">${actionLabel}</button></td>
               </tr>
             `;
-          }).join("")}
+          }).join('')}
         </tbody>
       </table>
     </div>
@@ -2260,7 +2314,8 @@ function renderAdminUserStats(items = []) {
 function renderAdminActivityList(items = [], options = {}) {
   if (!els.adminActivityList) return;
 
-  const dueRows = items.filter((item) => Math.max(Number(item.dueAmount || 0), 0) > 0);
+  const filtered = filterAdminTrackerEntries(items);
+  const dueRows = filtered.filter((item) => Math.max(Number(item.dueAmount || 0), 0) > 0);
   const { message = "" } = options || {};
   const note = message ? `<div class="empty-box">${escapeHtml(message)}</div>` : "";
 
@@ -2271,74 +2326,124 @@ function renderAdminActivityList(items = [], options = {}) {
 
   els.adminActivityList.innerHTML = note + dueRows.map((item) => {
     const pay = getStoredPaymentDetails(item);
-    const updated = item.createdAt?.toDate?.() ? item.createdAt.toDate().toLocaleString() : (item.whenText || "");
     const name = escapeHtml(item.targetName || item.actorName || "Player");
     const email = escapeHtml(item.targetEmail || item.actorEmail || "");
-    const matchText = escapeHtml(item.matchLocation || item.matchLabel || item.matchId || "Match");
+    const matchText = escapeHtml(formatTrackerMatchMeta(item));
     const slots = Math.max(Number(item.slotsAdded || item.slots || 0), 0);
-
     return `
       <div class="announcement-card activity-card">
         <div class="activity-head">
           <strong>${name}</strong>
-          <span class="muted">${escapeHtml(updated)}</span>
+          <button class="secondary-btn compact-btn booking-status-btn" type="button" data-matchid="${escapeHtml(item.matchId || '')}" data-userid="${escapeHtml(item.targetUserId || '')}" data-status="paid">Mark paid</button>
         </div>
         <div class="muted">${email}</div>
-        <div class="muted">Match: ${matchText}</div>
+        <div class="muted">${matchText}</div>
         <div class="muted">Slots: ${slots}</div>
         <div class="muted">Payment: ${escapeHtml(pay.methodLabel)} | ${escapeHtml(pay.status)} | Due BDT ${pay.dueAmount}</div>
       </div>
     `;
-  }).join("");
+  }).join('');
 }
 
-function mapBookingDocToTrackerEntry(docSnap) {
-  const item = docSnap.data() || {};
-  const matchRef = docSnap.ref.parent?.parent;
-  const matchId = matchRef?.id || "";
+function bindAdminTrackerActions() {
+  document.querySelectorAll('.booking-status-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      await updateBookingPaymentState(String(btn.dataset.matchid || ''), String(btn.dataset.userid || ''), String(btn.dataset.status || 'paid'));
+    });
+  });
+}
+
+function mapBookingToTrackerEntry(matchId, matchData = {}, booking = {}) {
   return {
-    action: "booked",
+    action: 'booked',
     matchId,
-    matchLabel: item.matchLabel || "Match",
-    matchLocation: item.matchLocation || item.venue || item.location || `Match ${matchId || "session"}`,
-    actorUserId: item.userId || docSnap.id,
-    actorName: item.name || item.email?.split("@")[0] || "User",
-    actorEmail: item.email || "",
-    targetUserId: item.userId || docSnap.id,
-    targetName: item.name || "",
-    targetEmail: item.email || "",
-    paymentMethod: item.paymentMethod || "On-spot",
-    paymentStatus: item.paymentStatus || "",
-    dueAmount: Number(item.dueAmount || 0),
-    paidAmount: Number(item.paidAmount || 0),
-    slotFee: Number(item.slotFee || 0),
-    slotsAdded: Math.max(Number(item.slots || 0), 0),
-    totalSlotsForUser: Math.max(Number(item.slots || 0), 0),
-    totalFee: Number(item.totalFee || 0),
-    createdAt: item.updatedAt || item.createdAt || null,
-    whenText: item.updatedAt?.toDate?.() ? item.updatedAt.toDate().toLocaleString() : "Current booking"
+    matchLabel: booking.matchLabel || matchData.label || 'Match',
+    matchLocation: booking.matchLocation || booking.venue || booking.location || matchData.location || `Match ${matchId || 'session'}`,
+    matchDate: matchData.date || '',
+    matchTime: matchData.time || '',
+    actorUserId: booking.userId || '',
+    actorName: booking.name || booking.email?.split('@')[0] || 'User',
+    actorEmail: booking.email || '',
+    targetUserId: booking.userId || '',
+    targetName: booking.name || '',
+    targetEmail: booking.email || '',
+    paymentMethod: booking.paymentMethod || 'On-spot',
+    paymentStatus: booking.paymentStatus || '',
+    dueAmount: Number(booking.dueAmount || 0),
+    paidAmount: Number(booking.paidAmount || 0),
+    slotFee: Number(booking.slotFee || matchData.slotFee || 0),
+    slotsAdded: Math.max(Number(booking.slots || 0), 0),
+    totalSlotsForUser: Math.max(Number(booking.slots || 0), 0),
+    totalFee: Number(booking.totalFee || 0),
+    extraPlayerNames: Array.isArray(booking.extraPlayerNames) ? booking.extraPlayerNames : [],
+    createdAt: booking.updatedAt || booking.createdAt || null,
+    whenText: booking.updatedAt?.toDate?.() ? booking.updatedAt.toDate().toLocaleString() : 'Current booking'
   };
+}
+
+async function loadAdminBookingTracker() {
+  const matchesSnap = await getDocs(collection(db, 'matches'));
+  const matchRows = matchesSnap.docs.map((docSnap) => ({ id: docSnap.id, data: docSnap.data() || {} }));
+  const nested = await Promise.all(matchRows.map(async (row) => {
+    const bookingsSnap = await getDocs(collection(db, 'matches', row.id, 'bookings'));
+    return bookingsSnap.docs.map((docSnap) => mapBookingToTrackerEntry(row.id, row.data, docSnap.data() || {}));
+  }));
+
+  return nested.flat().sort((a, b) => (b.createdAt?.toDate?.()?.getTime?.() || 0) - (a.createdAt?.toDate?.()?.getTime?.() || 0));
+}
+
+function renderAdminTrackerDashboard(items = []) {
+  state.adminTrackerEntries = Array.isArray(items) ? items : [];
+  renderAdminTrackerFilters(state.adminTrackerEntries);
+  renderAdminActivitySummary(state.adminTrackerEntries);
+  renderAdminUserStats(state.adminTrackerEntries);
+  renderAdminActivityList(state.adminTrackerEntries);
+  bindAdminTrackerActions();
+}
+
+async function updateBookingPaymentState(matchId, userId, nextStatus = 'paid') {
+  if (!matchId || !userId) return;
+  try {
+    const entry = (state.adminTrackerEntries || []).find((item) => String(item.matchId) === String(matchId) && String(item.targetUserId) === String(userId));
+    if (!entry) {
+      showToast('Booking not found.');
+      return;
+    }
+    const totalFee = Math.max(Number(entry.totalFee || 0), 0);
+    const normalized = String(nextStatus || 'paid').toLowerCase() === 'paid' ? 'paid' : 'due';
+    await updateDoc(doc(db, 'matches', matchId, 'bookings', userId), {
+      paymentStatus: normalized,
+      paidAmount: normalized === 'paid' ? totalFee : 0,
+      dueAmount: normalized === 'paid' ? 0 : totalFee,
+      updatedAt: serverTimestamp()
+    });
+    showToast(normalized === 'paid' ? 'Payment marked as paid.' : 'Payment marked as due.');
+    const entries = await loadAdminBookingTracker();
+    renderAdminTrackerDashboard(entries);
+  } catch (err) {
+    console.error(err);
+    showToast(err.message || 'Could not update payment status.');
+  }
 }
 
 function listenAdminActivity() {
   state.activityUnsub?.();
-  state.activityUnsub = onSnapshot(
-    collectionGroup(db, "bookings"),
-    (snap) => {
-      const entries = snap.docs
-        .map((docSnap) => mapBookingDocToTrackerEntry(docSnap))
-        .sort((a, b) => (b.createdAt?.toDate?.()?.getTime?.() || 0) - (a.createdAt?.toDate?.()?.getTime?.() || 0));
 
-      renderAdminActivitySummary(entries);
-      renderAdminUserStats(entries);
-      renderAdminActivityList(entries);
-    },
-    () => {
+  const run = async () => {
+    try {
+      const entries = await loadAdminBookingTracker();
+      renderAdminTrackerDashboard(entries);
+    } catch (err) {
+      console.error(err);
       if (els.adminActivitySummary) els.adminActivitySummary.innerHTML = `<div class="empty-box">Could not load booking summary.</div>`;
       if (els.adminActivityUsers) els.adminActivityUsers.innerHTML = `<div class="empty-box">Could not load player payment list.</div>`;
       if (els.adminActivityList) els.adminActivityList.innerHTML = `<div class="empty-box">Could not load due payment list.</div>`;
     }
-  );
+  };
+
+  run();
+  const timer = setInterval(run, 10000);
+  state.activityUnsub = () => clearInterval(timer);
 }
 function ensureLoginActivityLogged(user) {
   if (!user) return;
@@ -3187,8 +3292,30 @@ function listenAdminMatches() {
       for (const row of orderedDocs) {
         const d = { id: row.id };
         const m = row.data;
-        const bookingsSnap = await getDocs(collection(db, "matches", d.id, "bookings"));
-        const booked = getBookedSlots(bookingsSnap.docs.map((b) => b.data()));
+        const bookingDocs = await getDocs(collection(db, "matches", d.id, "bookings"));
+        const bookings = bookingDocs.docs.map((b) => b.data() || {});
+        const booked = getBookedSlots(bookings);
+        const bookingRows = bookings.length ? bookings.map((booking) => {
+          const entry = mapBookingToTrackerEntry(d.id, m, booking);
+          const pay = getStoredPaymentDetails(entry);
+          const names = [entry.targetName || entry.actorName || 'Player', ...(Array.isArray(entry.extraPlayerNames) ? entry.extraPlayerNames : [])].filter(Boolean).join(', ');
+          const nextStatus = pay.status.toLowerCase() === 'paid' ? 'due' : 'paid';
+          const actionLabel = pay.status.toLowerCase() === 'paid' ? 'Mark due' : 'Mark paid';
+          return `
+            <div class="admin-booking-row">
+              <div class="admin-booking-copy">
+                <strong>${escapeHtml(entry.targetName || entry.actorName || 'Player')}</strong>
+                <div class="muted">${escapeHtml(entry.targetEmail || entry.actorEmail || '')}</div>
+                <div class="muted">Players: ${escapeHtml(names || 'Player')}</div>
+                <div class="muted">${Math.max(Number(entry.slotsAdded || 0), 0)} slot(s) | ${escapeHtml(pay.methodLabel)} | ${escapeHtml(pay.status)} | Paid BDT ${pay.paidAmount} | Due BDT ${pay.dueAmount}</div>
+              </div>
+              <div class="admin-booking-actions">
+                <button class="secondary-btn compact-btn booking-status-btn" type="button" data-matchid="${escapeHtml(d.id)}" data-userid="${escapeHtml(entry.targetUserId || '')}" data-status="${escapeHtml(nextStatus)}">${actionLabel}</button>
+                <button class="ghost-btn compact-btn kick-btn" type="button" data-matchid="${escapeHtml(d.id)}" data-userid="${escapeHtml(entry.targetUserId || '')}">Remove</button>
+              </div>
+            </div>
+          `;
+        }).join('') : `<div class="empty-box">No players booked yet.</div>`;
 
         cards.push(`
           <div class="admin-match-card">
@@ -3204,6 +3331,7 @@ function listenAdminMatches() {
                 ${m.status === "open" ? "Close" : "Reopen"}
               </button>
             </div>
+            <div class="admin-booking-list">${bookingRows}</div>
           </div>
         `);
       }
@@ -3218,6 +3346,18 @@ function listenAdminMatches() {
           showToast(`Match ${nextStatus}.`);
         });
       });
+
+      els.adminMatchesList.querySelectorAll('.booking-status-btn').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          await updateBookingPaymentState(String(btn.dataset.matchid || ''), String(btn.dataset.userid || ''), String(btn.dataset.status || 'paid'));
+        });
+      });
+
+      els.adminMatchesList.querySelectorAll('.kick-btn').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          await kickPlayerDirect(String(btn.dataset.matchid || ''), String(btn.dataset.userid || ''));
+        });
+      });
     },
     (err) => {
       console.error(err);
@@ -3225,7 +3365,6 @@ function listenAdminMatches() {
     }
   );
 }
-
 async function editAnnouncement(id) {
   try {
     const nextText = window.prompt("Edit announcement:");
@@ -3402,6 +3541,9 @@ onAuthStateChanged(auth, async (user) => {
     setView(els.authView);
   }
 });
+
+
+
 
 
 
