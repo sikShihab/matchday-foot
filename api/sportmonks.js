@@ -22,7 +22,7 @@ function withTimeout(ms = 10000) {
 async function sportmonksFetch(path, query = {}) {
   const token = process.env.SPORTMONKS_API_TOKEN;
   if (!token) {
-    throw new Error("Missing SPORTMONKS_API_TOKEN");
+    throw new Error("Live match service not configured");
   }
 
   const url = new URL(`${SPORTMONKS_BASE}${path}`);
@@ -42,7 +42,7 @@ async function sportmonksFetch(path, query = {}) {
 
     if (!resp.ok) {
       const body = await resp.text();
-      throw new Error(`Sportmonks ${resp.status}: ${body.slice(0, 300)}`);
+      throw new Error(`Live match service error (${resp.status})`);
     }
 
     return await resp.json();
@@ -118,6 +118,31 @@ function mapFixture(fixture = {}) {
     homeScore,
     awayScore
   };
+}
+
+function fixturePriority(fixture = {}) {
+  const stateName = String(
+    fixture?.state?.developer_name ||
+    fixture?.state?.short_name ||
+    fixture?.state?.name ||
+    ""
+  ).toLowerCase();
+
+  if (
+    stateName.includes("live") ||
+    stateName.includes("inplay") ||
+    stateName.includes("in play") ||
+    stateName.includes("half")
+  ) return 3;
+
+  if (
+    stateName.includes("finished") ||
+    stateName.includes("ft") ||
+    stateName.includes("aet") ||
+    stateName.includes("pen")
+  ) return 2;
+
+  return 1;
 }
 
 function parseLineups(fixture = {}) {
@@ -284,17 +309,27 @@ module.exports = async (req, res) => {
     ]);
 
     const merged = []
-      .concat(Array.isArray(livePayload?.data) ? livePayload.data : [])
-      .concat(...dayPayloads.map((p) => (Array.isArray(p?.data) ? p.data : [])));
+      .concat(...dayPayloads.map((p) => (Array.isArray(p?.data) ? p.data : [])))
+      .concat(Array.isArray(livePayload?.data) ? livePayload.data : []);
 
     const map = new Map();
     merged.forEach((fx) => {
       const mapped = mapFixture(fx);
       if (!mapped.id) return;
-      map.set(mapped.id, mapped);
+
+      const current = map.get(mapped.id);
+      const nextPriority = fixturePriority(fx);
+      const currentPriority = current ? Number(current._priority || 0) : 0;
+      const nextStamp = Number(mapped.stamp || 0);
+      const currentStamp = current ? Number(current.stamp || 0) : 0;
+
+      if (!current || nextPriority > currentPriority || (nextPriority === currentPriority && nextStamp >= currentStamp)) {
+        map.set(mapped.id, { ...mapped, _priority: nextPriority });
+      }
     });
 
     const fixtures = Array.from(map.values())
+      .map(({ _priority, ...fixture }) => fixture)
       .sort((a, b) => a.stamp - b.stamp)
       .slice(0, 300);
 
@@ -302,7 +337,7 @@ module.exports = async (req, res) => {
   } catch (err) {
     res.status(500).json({
       ok: false,
-      error: err?.message || "Sportmonks proxy failed"
+      error: err?.message || "Live match service failed"
     });
   }
 };

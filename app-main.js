@@ -507,6 +507,7 @@ function initMoreMenu() {
   }
 
   on(els.moreMenuBtn, "click", (e) => {
+    e.preventDefault();
     e.stopPropagation();
     toggleMoreMenu();
   });
@@ -539,6 +540,158 @@ function initMoreMenu() {
     });
   });
 }
+function formatMatchDate(dateStr, timeStr) {
+  if (!dateStr && !timeStr) return "TBD";
+  if (!dateStr) return String(timeStr || "TBD");
+  if (!timeStr) return String(dateStr);
+
+  const dt = new Date(`${dateStr}T${timeStr}`);
+  if (Number.isNaN(dt.getTime())) return `${dateStr} ${timeStr}`;
+
+  return dt.toLocaleString([], {
+    month: "short",
+    day: "2-digit",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit"
+  });
+}
+
+function escapeHtml(str = "") {
+  return String(str).replace(/[&<>"']/g, (char) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#039;"
+  }[char] || char));
+}
+
+function getMapSnapshotUrl(lat, lng) {
+  const latNum = Number(lat).toFixed(6);
+  const lngNum = Number(lng).toFixed(6);
+  return `https://staticmap.openstreetmap.de/staticmap.php?center=${latNum},${lngNum}&zoom=17&size=900x460&markers=${latNum},${lngNum},red-pushpin`;
+}
+
+function getGoogleMapsUrl(lat, lng) {
+  return `https://www.google.com/maps?q=${lat},${lng}`;
+}
+
+function getGoogleMapsEmbedUrl(lat, lng) {
+  return `https://www.google.com/maps?q=${lat},${lng}&output=embed`;
+}
+
+function parsePhotoUrls(raw) {
+  return String(raw || "")
+    .split(/\r?\n|,/)
+    .map((item) => item.trim())
+    .filter((item) => /^https?:\/\//i.test(item));
+}
+
+function renderVenuePhotos(photoUrls = []) {
+  if (!els.heroPhotoStrip) return;
+  if (!photoUrls.length) {
+    els.heroPhotoStrip.innerHTML = "";
+    els.heroPhotoStrip.classList.add("hidden");
+    return;
+  }
+
+  els.heroPhotoStrip.innerHTML = photoUrls.map((url) => {
+    const safe = escapeHtml(url);
+    return `<a href="${safe}" target="_blank" rel="noopener noreferrer" class="hero-photo-link"><img src="${safe}" alt="Venue photo" class="hero-photo-thumb" /></a>`;
+  }).join("");
+  els.heroPhotoStrip.classList.remove("hidden");
+}
+
+function setMapSelection(lat, lng, shouldPan = true) {
+  const latNum = Number(Number(lat).toFixed(6));
+  const lngNum = Number(Number(lng).toFixed(6));
+  if (!Number.isFinite(latNum) || !Number.isFinite(lngNum)) return;
+
+  if (els.adminLat) els.adminLat.value = String(latNum);
+  if (els.adminLng) els.adminLng.value = String(lngNum);
+
+  const snapshot = getMapSnapshotUrl(latNum, lngNum);
+  if (els.adminMapImage) els.adminMapImage.value = snapshot;
+  if (els.adminMapPreview) els.adminMapPreview.src = snapshot;
+  els.adminMapPreviewWrap?.classList.remove("hidden");
+  if (els.adminMapCoords) els.adminMapCoords.textContent = `Lat ${latNum}, Lng ${lngNum}`;
+  if (els.mapPickInfo) els.mapPickInfo.textContent = `Selected point: ${latNum}, ${lngNum}`;
+
+  if (adminMap) {
+    if (!adminMapMarker) {
+      adminMapMarker = window.L.marker([latNum, lngNum]).addTo(adminMap);
+    } else {
+      adminMapMarker.setLatLng([latNum, lngNum]);
+    }
+
+    if (shouldPan) {
+      adminMap.setView([latNum, lngNum], 17);
+    }
+  }
+}
+
+function initAdminMap() {
+  if (!window.L || !els.adminMapCanvas) {
+    showToast("Map could not be loaded.");
+    return;
+  }
+
+  if (adminMap) {
+    adminMap.invalidateSize();
+    return;
+  }
+
+  adminMap = window.L.map(els.adminMapCanvas, { zoomControl: true }).setView([DEFAULT_MAP_POINT.lat, DEFAULT_MAP_POINT.lng], 13);
+
+  window.L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19,
+    attribution: "&copy; OpenStreetMap contributors"
+  }).addTo(adminMap);
+
+  adminMap.on("click", (event) => {
+    setMapSelection(event.latlng.lat, event.latlng.lng, false);
+  });
+}
+
+function openMapPicker() {
+  if (!els.mapPickerModal || !els.adminLat || !els.adminLng) return;
+  els.mapPickerModal.classList.remove("hidden");
+  if (els.mapSearchInput) els.mapSearchInput.value = "";
+  if (els.mapSearchResults) els.mapSearchResults.innerHTML = "";
+
+  setTimeout(() => {
+    initAdminMap();
+
+    const savedLat = Number(els.adminLat.value);
+    const savedLng = Number(els.adminLng.value);
+    const lat = Number.isFinite(savedLat) ? savedLat : DEFAULT_MAP_POINT.lat;
+    const lng = Number.isFinite(savedLng) ? savedLng : DEFAULT_MAP_POINT.lng;
+
+    setMapSelection(lat, lng, true);
+    adminMap?.invalidateSize();
+  }, 40);
+}
+
+function closeMapPicker() {
+  els.mapPickerModal?.classList.add("hidden");
+  if (els.mapSearchResults) els.mapSearchResults.innerHTML = "";
+}
+
+function confirmMapPicker() {
+  if (!els.adminLat || !els.adminLng) return;
+  const lat = Number(els.adminLat.value);
+  const lng = Number(els.adminLng.value);
+
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    showToast("Select a field point on the map first.");
+    return;
+  }
+
+  closeMapPicker();
+  showToast("Field location saved.");
+}
+
 function isPopularCompetition(name = "") {
   const lower = String(name).toLowerCase();
   return POPULAR_LEAGUE_KEYWORDS.some((key) => lower.includes(key));
@@ -949,7 +1102,7 @@ function renderFixtures(fixtures = []) {
   const scoped = filterFixturesByMode(state.fixturesData);
   if (!scoped.length) {
     const label = state.fixtureMode === "all" ? "matches" : state.fixtureMode;
-    els.fixturesList.innerHTML = `<div class="empty-box">No ${label} matches available right now.</div>`;
+    els.fixturesList.innerHTML = `<div class="empty-box">No ${label} matches are available from the live match service right now.</div>`;
     return;
   }
 
@@ -1261,7 +1414,7 @@ async function loadDailyFixtures(options = {}) {
     const payload = await resp.json();
 
     if (!resp.ok || !payload?.ok) {
-      throw new Error(payload?.error || "Sportmonks proxy error");
+      throw new Error(payload?.error || "Live match service error.");
     }
 
     const mapped = (Array.isArray(payload.fixtures) ? payload.fixtures : []).map((item) => ({
@@ -1280,9 +1433,9 @@ async function loadDailyFixtures(options = {}) {
     renderFixtures(mapped);
   } catch (err) {
     console.error(err);
-    const message = String(err?.message || "").includes("SPORTMONKS_API_TOKEN")
-      ? "Sportmonks token missing in Vercel env. Add SPORTMONKS_API_TOKEN."
-      : "Could not load fixtures right now.";
+    const message = String(err?.message || "").includes("not configured")
+      ? "Live match service is not configured yet."
+      : "Could not load the live match service right now.";
     els.fixturesList.innerHTML = `<div class="empty-box">${escapeHtml(message)}</div>`;
   } finally {
     setButtonLoading(els.refreshFixturesBtn, false);
@@ -1756,8 +1909,16 @@ async function routeAfterLogin(user) {
   if (!user) {
     state.user = null;
     state.userProfile = null;
+    state.featuredMatch = null;
+    closeMoreMenu();
+    closeProfileModal();
+    closeBkashModal();
+    closeReceiptModal();
+    closeFixtureDetailModal();
+    closeMapPicker();
     els.logoutBtn.classList.add("hidden");
     els.profileBtn.classList.add("hidden");
+    window.history.replaceState(null, "", window.location.pathname + window.location.search);
     setView(els.authView);
     return;
   }
@@ -1936,6 +2097,7 @@ async function logout() {
     closeMoreMenu();
     stopLiveListeners();
     await signOut(auth);
+    setView(els.authView);
     showToast("Logged out.");
   } catch (err) {
     console.error(err);
