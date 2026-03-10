@@ -1,4 +1,4 @@
-import { initializeApp } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-app.js";
+﻿import { initializeApp } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-app.js";
 import {
   getAuth,
   onAuthStateChanged,
@@ -63,7 +63,7 @@ const state = {
   myBookingsUnsub: null,
   playerPage: "liveScoreSection",
   fixturesData: [],
-  fixtureMode: "live",
+  fixtureMode: "all",
   fixtureLeague: "all",
   highlightsData: [],
   fixturesRefreshTimer: null,
@@ -268,6 +268,7 @@ const LEAGUE_LOGO_CACHE = new Map();
 const LINEUP_CACHE = new Map();
 const FIXTURE_DETAIL_CACHE = new Map();
 const SPORTMONKS_PROXY_URL = "/api/sportmonks";
+const FOOTBALL_NEWS_URL = "/api/football-news";
 let RESOLVED_COMPETITIONS = null;
 
 const POPULAR_LEAGUE_KEYWORDS = [
@@ -1314,7 +1315,7 @@ function filterFixturesByLeague(fixtures = []) {
 
 function setFixtureMode(mode) {
   const allowed = new Set(["live", "upcoming", "results", "all"]);
-  state.fixtureMode = allowed.has(mode) ? mode : "live";
+  state.fixtureMode = allowed.has(mode) ? mode : "all";
   renderFixtureTabs();
   renderFixtures(state.fixturesData || []);
 }
@@ -1332,13 +1333,24 @@ function renderFixtures(fixtures = []) {
   renderFixtureLeagueRail(state.fixturesData);
 
   const scoped = filterFixturesByLeague(filterFixturesByMode(state.fixturesData));
-  if (!scoped.length) {
+  let displayFixtures = scoped;
+  let fallbackNotice = "";
+
+  if (!displayFixtures.length && state.fixtureMode === "live") {
+    const scheduled = filterFixturesByLeague(state.fixturesData);
+    if (scheduled.length) {
+      displayFixtures = scheduled;
+      fallbackNotice = "No live matches right now. Showing the latest schedule instead.";
+    }
+  }
+
+  if (!displayFixtures.length) {
     const label = state.fixtureMode === "all" ? "matches" : state.fixtureMode;
     els.fixturesList.innerHTML = `<div class="empty-box">No ${label} matches are available from the live match service right now.</div>`;
     return;
   }
 
-  const groupedByLeague = scoped.reduce((acc, item) => {
+  const groupedByLeague = displayFixtures.reduce((acc, item) => {
     const key = getFixtureLeagueKey(item);
     if (!acc[key]) acc[key] = [];
     acc[key].push(item);
@@ -1413,7 +1425,7 @@ function renderFixtures(fixtures = []) {
     `;
   }).join("");
 
-  els.fixturesList.innerHTML = html;
+  els.fixturesList.innerHTML = fallbackNotice ? `<div class="fixture-mode-note">${escapeHtml(fallbackNotice)}</div>${html}` : html;
   els.fixturesList.querySelectorAll(".fixture-detail-btn").forEach((btn) => {
     btn.addEventListener("click", () => openFixtureDetail(String(btn.dataset.fixtureid || ""), btn));
   });
@@ -1732,6 +1744,23 @@ async function loadDailyFixtures(options = {}) {
     setButtonLoading(els.refreshFixturesBtn, false);
   }
 }
+async function loadFootballNews() {
+  try {
+    const resp = await fetch(FOOTBALL_NEWS_URL);
+    const payload = await resp.json();
+    const items = Array.isArray(payload?.items) ? payload.items : [];
+    return items.map((item) => ({
+      title: item.title || "Football story",
+      competition: item.competition || "Football News",
+      source: item.source || "Football News",
+      publishedAt: item.publishedAt ? new Date(item.publishedAt).toLocaleString() : "",
+      thumbnail: item.thumbnail || "https://placehold.co/960x540/111318/f7f8fb?text=Football+News",
+      url: item.url || "#"
+    })).filter((item) => item.url && item.url !== "#");
+  } catch {
+    return [];
+  }
+}
 async function loadSportsDbHighlights() {
   const leagues = ["4328", "4335", "4331", "4332", "4334"]; // EPL, La Liga, Bundesliga, Serie A, Ligue 1
   const out = [];
@@ -1763,11 +1792,42 @@ async function loadHighlights(queryText = "") {
   if (!els.highlightsList) return;
 
   const query = String(queryText || "").trim().toLowerCase();
+  const matchesQuery = (item) => {
+    if (!query) return true;
+    const hay = `${item.title} ${item.competition} ${item.source} ${item.kind || ""}`.toLowerCase();
+    return hay.includes(query);
+  };
+  const dedupeItems = (items = []) => {
+    const seen = new Set();
+    return items.filter((item) => {
+      const key = `${item.title}::${item.url}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  };
+  const mergeStories = (newsItems = [], highlightItems = [], maxItems = 36) => {
+    const merged = [];
+    const max = Math.max(newsItems.length, highlightItems.length);
+    for (let i = 0; i < max && merged.length < maxItems; i += 1) {
+      if (newsItems[i]) merged.push(newsItems[i]);
+      if (highlightItems[i] && merged.length < maxItems) merged.push(highlightItems[i]);
+    }
+    return merged;
+  };
+
   setButtonLoading(els.highlightsSearchBtn, true, "Searching...");
+  if (els.highlightsLead) {
+    els.highlightsLead.innerHTML = '<div class="empty-box">Loading football stories...</div>';
+  }
+  if (els.highlightsTrending) {
+    els.highlightsTrending.innerHTML = '';
+  }
   els.highlightsList.innerHTML = `<div class="skeleton-grid"><div class="skeleton-card"></div><div class="skeleton-card"></div><div class="skeleton-card"></div></div>`;
 
   try {
-    const [scorebatItems, sportsDbItems] = await Promise.all([
+    const [newsItems, scorebatItems, sportsDbItems] = await Promise.all([
+      loadFootballNews(),
       (async () => {
         try {
           const response = await fetch("https://www.scorebat.com/video-api/v3/");
@@ -1779,11 +1839,12 @@ async function loadHighlights(queryText = "") {
             const url = extractEmbedSrc(firstVideo?.embed || "") || item.matchviewUrl || item.url || "#";
             return {
               title: item.title || "Match highlight",
-              competition: item.competition || "Football",
+              competition: item.competition || "Football Highlights",
               source: "ScoreBat",
               publishedAt: item.date ? new Date(item.date).toLocaleString() : "",
               thumbnail: item.thumbnail || "https://images.unsplash.com/photo-1574629810360-7efbbe195018?auto=format&fit=crop&w=900&q=80",
-              url
+              url,
+              kind: "highlight"
             };
           }).filter((item) => item.url && item.url !== "#");
         } catch {
@@ -1793,28 +1854,19 @@ async function loadHighlights(queryText = "") {
       loadSportsDbHighlights()
     ]);
 
-    const items = [...scorebatItems, ...sportsDbItems];
-    state.highlightsData = items;
+    const normalizedNews = newsItems.map((item) => ({ ...item, kind: "news" }));
+    const normalizedHighlights = [...scorebatItems, ...sportsDbItems].map((item) => ({
+      ...item,
+      competition: item.competition || "Football Highlights",
+      kind: item.kind || "highlight"
+    }));
 
-    let filtered = items;
-    if (query) {
-      filtered = items.filter((item) => {
-        const hay = `${item.title} ${item.competition}`.toLowerCase();
-        return hay.includes(query);
-      });
-    }
+    const filteredNews = dedupeItems(normalizedNews.filter(matchesQuery));
+    const filteredHighlights = dedupeItems(normalizedHighlights.filter(matchesQuery));
+    const shortlist = mergeStories(filteredNews, filteredHighlights, query ? 48 : 36);
 
-    const deduped = [];
-    const seen = new Set();
-    filtered.forEach((item) => {
-      const key = `${item.title}::${item.url}`;
-      if (seen.has(key)) return;
-      seen.add(key);
-      deduped.push(item);
-    });
+    state.highlightsData = shortlist;
 
-    const maxItems = query ? 48 : 36;
-    const shortlist = deduped.slice(0, maxItems);
     if (!shortlist.length) {
       renderHighlights(buildHighlightFallbacks(queryText), queryText);
       if (els.highlightsMeta) els.highlightsMeta.textContent = "Showing fallback football stories.";
@@ -1822,6 +1874,10 @@ async function loadHighlights(queryText = "") {
     }
 
     renderHighlights(shortlist, queryText);
+    if (els.highlightsMeta) {
+      const q = query ? ` for "${queryText.trim()}"` : "";
+      els.highlightsMeta.textContent = `${filteredNews.length} news stories and ${filteredHighlights.length} highlights loaded${q}.`;
+    }
   } catch (err) {
     console.error(err);
     renderHighlights(buildHighlightFallbacks(queryText), queryText);
@@ -3205,6 +3261,10 @@ onAuthStateChanged(auth, async (user) => {
     setView(els.authView);
   }
 });
+
+
+
+
 
 
 

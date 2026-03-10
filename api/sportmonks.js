@@ -1,4 +1,5 @@
 const SPORTMONKS_BASE = "https://api.sportmonks.com/v3/football";
+const THESPORTSDB_BASE = "https://www.thesportsdb.com/api/v1/json/123";
 
 function toIsoDate(d = new Date()) {
   const year = d.getUTCFullYear();
@@ -251,6 +252,136 @@ function parseFixtureDetail(fixture = {}) {
   };
 }
 
+async function theSportsDbFetch(endpoint, query = {}) {
+  const url = new URL(`${THESPORTSDB_BASE}/${endpoint}`);
+  Object.entries(query).forEach(([k, v]) => {
+    if (v === undefined || v === null || v === "") return;
+    url.searchParams.set(k, String(v));
+  });
+
+  const { controller, clear } = withTimeout(12000);
+  try {
+    const resp = await fetch(url, {
+      method: "GET",
+      headers: { Accept: "application/json" },
+      signal: controller.signal
+    });
+
+    if (!resp.ok) {
+      throw new Error(`Fallback football service error (${resp.status})`);
+    }
+
+    return await resp.json();
+  } finally {
+    clear();
+  }
+}
+
+function normalizeSportsDbTime(raw = "") {
+  const text = String(raw || "").trim();
+  return text ? text.slice(0, 5) : "";
+}
+
+function mapSportsDbEvent(ev = {}) {
+  const date = String(ev?.dateEvent || ev?.dateEventLocal || "");
+  const time = normalizeSportsDbTime(ev?.strTimeLocal || ev?.strTime || "");
+  const kickoffIso = date ? `${date}T${time || "00:00"}:00Z` : "";
+  const stamp = kickoffIso && !Number.isNaN(Date.parse(kickoffIso)) ? Date.parse(kickoffIso) : Number.MAX_SAFE_INTEGER;
+
+  return {
+    id: String(ev?.idEvent || ""),
+    leagueId: String(ev?.idLeague || ""),
+    league: ev?.strLeague || ev?.strLeagueAlternate || "Competition",
+    leagueLogo: ev?.strLeagueBadge || "",
+    season: ev?.strSeason || "",
+    round: ev?.intRound ? `Round ${ev.intRound}` : "",
+    venue: ev?.strVenue || "",
+    venueCity: ev?.strCountry || "",
+    status: ev?.strStatus || "Scheduled",
+    statusCode: ev?.strStatus || "",
+    date,
+    time,
+    kickoffIso,
+    stamp,
+    home: ev?.strHomeTeam || "Home",
+    away: ev?.strAwayTeam || "Away",
+    homeTeamId: String(ev?.idHomeTeam || ""),
+    awayTeamId: String(ev?.idAwayTeam || ""),
+    homeBadge: ev?.strHomeTeamBadge || "",
+    awayBadge: ev?.strAwayTeamBadge || "",
+    homeScore: Number.isFinite(Number(ev?.intHomeScore)) ? Number(ev.intHomeScore) : null,
+    awayScore: Number.isFinite(Number(ev?.intAwayScore)) ? Number(ev.intAwayScore) : null
+  };
+}
+
+function mapSportsDbStats(ev = {}) {
+  const pairs = [
+    ["Shots", ev?.intHomeShots, ev?.intAwayShots],
+    ["Yellow Cards", ev?.intHomeYellowCards, ev?.intAwayYellowCards],
+    ["Red Cards", ev?.intHomeRedCards, ev?.intAwayRedCards],
+    ["Corners", ev?.intHomeCorners, ev?.intAwayCorners],
+    ["Fouls", ev?.intHomeFouls, ev?.intAwayFouls],
+    ["Possession", ev?.strHomePossession, ev?.strAwayPossession]
+  ];
+
+  return pairs
+    .filter(([, home, away]) => home !== undefined || away !== undefined)
+    .map(([name, home, away]) => ({ name, home: home ?? "-", away: away ?? "-" }));
+}
+
+function parseSportsDbDetail(ev = {}) {
+  const base = mapSportsDbEvent(ev);
+  return {
+    ...base,
+    resultInfo: ev?.strStatus || "",
+    weather: null,
+    lineups: {
+      homeTeam: base.home,
+      awayTeam: base.away,
+      home: [],
+      away: []
+    },
+    events: [],
+    statistics: mapSportsDbStats(ev),
+    sidelined: []
+  };
+}
+
+async function fallbackFixtures(date) {
+  const loadEvents = async (d) => {
+    const payload = await theSportsDbFetch("eventsday.php", { d, s: "Soccer" });
+    const events = Array.isArray(payload?.events) ? payload.events : [];
+    return events.map(mapSportsDbEvent).filter((item) => item.id);
+  };
+
+  const [prev, today, next] = await Promise.all([
+    loadEvents(addDays(date, -1)).catch(() => []),
+    loadEvents(date).catch(() => []),
+    loadEvents(addDays(date, 1)).catch(() => [])
+  ]);
+
+  const merged = [...prev, ...today, ...next];
+  const map = new Map();
+  merged.forEach((fixture) => {
+    if (!map.has(fixture.id)) map.set(fixture.id, fixture);
+  });
+
+  return Array.from(map.values())
+    .sort((a, b) => a.stamp - b.stamp)
+    .slice(0, 300);
+}
+
+async function fallbackDetail(fixtureId) {
+  const payload = await theSportsDbFetch("lookupevent.php", { id: fixtureId });
+  const ev = Array.isArray(payload?.events) ? payload.events[0] : null;
+  if (!ev) throw new Error("Could not load match center.");
+  return parseSportsDbDetail(ev);
+}
+
+async function fallbackLineups(fixtureId) {
+  const detail = await fallbackDetail(fixtureId);
+  return detail.lineups;
+}
 module.exports = async (req, res) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET,OPTIONS");
@@ -276,10 +407,15 @@ module.exports = async (req, res) => {
         return;
       }
 
-      const include = "participants;league;venue;state;scores;season;round;events.type;events.player;events.period;statistics.type;sidelined.sideline.player;sidelined.sideline.type;weatherReport;lineups.details.player";
-      const payload = await sportmonksFetch(`/fixtures/${fixtureId}`, { include });
-      const fixture = payload?.data || {};
-      res.status(200).json({ ok: true, detail: parseFixtureDetail(fixture) });
+      try {
+        const include = "participants;league;venue;state;scores;season;round;events.type;events.player;events.period;statistics.type;sidelined.sideline.player;sidelined.sideline.type;weatherReport;lineups.details.player";
+        const payload = await sportmonksFetch(`/fixtures/${fixtureId}`, { include });
+        const fixture = payload?.data || {};
+        res.status(200).json({ ok: true, detail: parseFixtureDetail(fixture) });
+      } catch {
+        const detail = await fallbackDetail(fixtureId);
+        res.status(200).json({ ok: true, detail });
+      }
       return;
     }
 
@@ -290,50 +426,59 @@ module.exports = async (req, res) => {
         return;
       }
 
-      const include = "participants;lineups.details.player";
-      const payload = await sportmonksFetch(`/fixtures/${fixtureId}`, { include });
-      const fixture = payload?.data || {};
-
-      res.status(200).json({ ok: true, lineup: parseLineups(fixture) });
+      try {
+        const include = "participants;lineups.details.player";
+        const payload = await sportmonksFetch(`/fixtures/${fixtureId}`, { include });
+        const fixture = payload?.data || {};
+        res.status(200).json({ ok: true, lineup: parseLineups(fixture) });
+      } catch {
+        const lineup = await fallbackLineups(fixtureId);
+        res.status(200).json({ ok: true, lineup });
+      }
       return;
     }
 
     const include = "participants;league;venue;state;scores;season;round";
     const date = String(req.query.date || toIsoDate());
 
-    const [livePayload, ...dayPayloads] = await Promise.all([
-      sportmonksFetch("/fixtures/live", { include }).catch(() => ({ data: [] })),
-      sportmonksFetch(`/fixtures/date/${addDays(date, -1)}`, { include }).catch(() => ({ data: [] })),
-      sportmonksFetch(`/fixtures/date/${date}`, { include }).catch(() => ({ data: [] })),
-      sportmonksFetch(`/fixtures/date/${addDays(date, 1)}`, { include }).catch(() => ({ data: [] }))
-    ]);
+    try {
+      const [livePayload, ...dayPayloads] = await Promise.all([
+        sportmonksFetch("/fixtures/live", { include }).catch(() => ({ data: [] })),
+        sportmonksFetch(`/fixtures/date/${addDays(date, -1)}`, { include }).catch(() => ({ data: [] })),
+        sportmonksFetch(`/fixtures/date/${date}`, { include }).catch(() => ({ data: [] })),
+        sportmonksFetch(`/fixtures/date/${addDays(date, 1)}`, { include }).catch(() => ({ data: [] }))
+      ]);
 
-    const merged = []
-      .concat(...dayPayloads.map((p) => (Array.isArray(p?.data) ? p.data : [])))
-      .concat(Array.isArray(livePayload?.data) ? livePayload.data : []);
+      const merged = []
+        .concat(...dayPayloads.map((p) => (Array.isArray(p?.data) ? p.data : [])))
+        .concat(Array.isArray(livePayload?.data) ? livePayload.data : []);
 
-    const map = new Map();
-    merged.forEach((fx) => {
-      const mapped = mapFixture(fx);
-      if (!mapped.id) return;
+      const map = new Map();
+      merged.forEach((fx) => {
+        const mapped = mapFixture(fx);
+        if (!mapped.id) return;
 
-      const current = map.get(mapped.id);
-      const nextPriority = fixturePriority(fx);
-      const currentPriority = current ? Number(current._priority || 0) : 0;
-      const nextStamp = Number(mapped.stamp || 0);
-      const currentStamp = current ? Number(current.stamp || 0) : 0;
+        const current = map.get(mapped.id);
+        const nextPriority = fixturePriority(fx);
+        const currentPriority = current ? Number(current._priority || 0) : 0;
+        const nextStamp = Number(mapped.stamp || 0);
+        const currentStamp = current ? Number(current.stamp || 0) : 0;
 
-      if (!current || nextPriority > currentPriority || (nextPriority === currentPriority && nextStamp >= currentStamp)) {
-        map.set(mapped.id, { ...mapped, _priority: nextPriority });
-      }
-    });
+        if (!current || nextPriority > currentPriority || (nextPriority === currentPriority && nextStamp >= currentStamp)) {
+          map.set(mapped.id, { ...mapped, _priority: nextPriority });
+        }
+      });
 
-    const fixtures = Array.from(map.values())
-      .map(({ _priority, ...fixture }) => fixture)
-      .sort((a, b) => a.stamp - b.stamp)
-      .slice(0, 300);
+      const fixtures = Array.from(map.values())
+        .map(({ _priority, ...fixture }) => fixture)
+        .sort((a, b) => a.stamp - b.stamp)
+        .slice(0, 300);
 
-    res.status(200).json({ ok: true, fixtures });
+      res.status(200).json({ ok: true, fixtures });
+    } catch {
+      const fixtures = await fallbackFixtures(date);
+      res.status(200).json({ ok: true, fixtures });
+    }
   } catch (err) {
     res.status(500).json({
       ok: false,
