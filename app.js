@@ -2309,6 +2309,92 @@ function renderAdminUserStats(items = []) {
   `;
 }
 
+function renderAdminActivityList(entries = [], options = {}) {
+  if (!els.adminActivityList) return;
+
+  const { message = "" } = options || {};
+  const note = message ? `<div class="empty-box">${escapeHtml(message)}</div>` : "";
+  if (!entries.length) {
+    els.adminActivityList.innerHTML = note || `<div class="empty-box">No slot activity yet.</div>`;
+    return;
+  }
+
+  const cards = entries.map((item) => {
+    const when = item.createdAt?.toDate?.() ? item.createdAt.toDate().toLocaleString() : (item.whenText || "");
+    const actor = escapeHtml(item.actorName || item.actorEmail || "User");
+    const target = escapeHtml(item.targetName || item.targetEmail || "");
+    const paymentMethod = String(item.paymentMethod || "");
+    const pay = getStoredPaymentDetails(item);
+    const totalFee = pay.totalFee;
+    const venue = escapeHtml(item.matchLocation || "Venue");
+    const slots = Math.max(Number(item.slotsAdded || 0), 0);
+    const totalSlots = Math.max(Number(item.totalSlotsForUser || 0), 0);
+
+    return `
+      <div class="announcement-card activity-card">
+        <div class="activity-head">
+          <strong>${renderActivityAction(item.action)}</strong>
+          <span class="muted">${when}</span>
+        </div>
+        <div class="muted">Match: ${venue}</div>
+        <div class="muted">By: ${actor}</div>
+        ${target ? `<div class="muted">Player: ${target}</div>` : ""}
+        ${slots ? `<div class="muted">Slots added: ${slots} | User total: ${totalSlots}</div>` : ""}
+        ${paymentMethod ? `<div class="muted">Payment: ${escapeHtml(pay.methodLabel)} | ${escapeHtml(pay.status)} | Total BDT ${totalFee} | Paid BDT ${pay.paidAmount} | Due BDT ${pay.dueAmount}</div>` : ""}
+      </div>
+    `;
+  }).join("");
+
+  els.adminActivityList.innerHTML = note + cards;
+}
+
+async function loadAdminActivityFromBookingsFallback(message = "") {
+  try {
+    const snap = await getDocs(collectionGroup(db, "bookings"));
+    const entries = snap.docs.map((docSnap) => {
+      const item = docSnap.data() || {};
+      const matchRef = docSnap.ref.parent?.parent;
+      return {
+        action: "booked",
+        matchId: matchRef?.id || "",
+        matchLabel: item.matchLabel || "Match",
+        matchLocation: item.venue || item.location || "Venue",
+        actorUserId: item.userId || docSnap.id,
+        actorName: item.name || item.email?.split("@")[0] || "User",
+        actorEmail: item.email || "",
+        targetUserId: item.userId || docSnap.id,
+        targetName: item.name || "",
+        targetEmail: item.email || "",
+        paymentMethod: item.paymentMethod || "On-spot",
+        paymentStatus: item.paymentStatus || "",
+        dueAmount: Number(item.dueAmount || 0),
+        paidAmount: Number(item.paidAmount || 0),
+        slotFee: Number(item.slotFee || 0),
+        slotsAdded: Math.max(Number(item.slots || 0), 0),
+        totalSlotsForUser: Math.max(Number(item.slots || 0), 0),
+        totalFee: Number(item.totalFee || 0),
+        createdAt: item.updatedAt || item.createdAt || null,
+        whenText: item.updatedAt?.toDate?.() ? item.updatedAt.toDate().toLocaleString() : "Current booking"
+      };
+    }).sort((a, b) => (b.createdAt?.toDate?.()?.getTime?.() || 0) - (a.createdAt?.toDate?.()?.getTime?.() || 0));
+
+    if (!entries.length) {
+      if (els.adminActivitySummary) els.adminActivitySummary.innerHTML = `<div class="empty-box">No summary yet.</div>`;
+      if (els.adminActivityUsers) els.adminActivityUsers.innerHTML = `<div class="empty-box">No user activity yet.</div>`;
+      if (els.adminActivityList) els.adminActivityList.innerHTML = `<div class="empty-box">No slot activity yet.</div>`;
+      return;
+    }
+
+    renderAdminActivitySummary(entries);
+    renderAdminUserStats(entries);
+    renderAdminActivityList(entries, { message: message || "Showing current booking state." });
+  } catch (err) {
+    console.error(err);
+    if (els.adminActivityList) els.adminActivityList.innerHTML = `<div class="empty-box">Activity timeline unavailable right now.</div>`;
+    if (els.adminActivitySummary) els.adminActivitySummary.innerHTML = `<div class="empty-box">No summary yet.</div>`;
+    if (els.adminActivityUsers) els.adminActivityUsers.innerHTML = `<div class="empty-box">No user activity yet.</div>`;
+  }
+}
 function ensureLoginActivityLogged(user) {
   if (!user) return;
   try {
@@ -2333,9 +2419,7 @@ function listenAdminActivity() {
       if (!els.adminActivityList) return;
 
       if (snap.empty) {
-        if (els.adminActivitySummary) els.adminActivitySummary.innerHTML = `<div class="empty-box">No summary yet.</div>`;
-        if (els.adminActivityUsers) els.adminActivityUsers.innerHTML = `<div class="empty-box">No user activity yet.</div>`;
-        els.adminActivityList.innerHTML = `<div class="empty-box">No slot activity yet.</div>`;
+        loadAdminActivityFromBookingsFallback("No activity logs yet. Showing current bookings.");
         return;
       }
 
@@ -2346,38 +2430,10 @@ function listenAdminActivity() {
 
       renderAdminActivitySummary(entries);
       renderAdminUserStats(entries);
-
-      els.adminActivityList.innerHTML = entries.map((item) => {
-        const when = item.createdAt?.toDate?.() ? item.createdAt.toDate().toLocaleString() : "";
-        const actor = escapeHtml(item.actorName || item.actorEmail || "User");
-        const target = escapeHtml(item.targetName || item.targetEmail || "");
-        const paymentMethod = String(item.paymentMethod || "");
-        const pay = getStoredPaymentDetails(item);
-        const totalFee = pay.totalFee;
-        const venue = escapeHtml(item.matchLocation || "Venue");
-        const slots = Math.max(Number(item.slotsAdded || 0), 0);
-        const totalSlots = Math.max(Number(item.totalSlotsForUser || 0), 0);
-
-        return `
-          <div class="announcement-card activity-card">
-            <div class="activity-head">
-              <strong>${renderActivityAction(item.action)}</strong>
-              <span class="muted">${when}</span>
-            </div>
-            <div class="muted">Match: ${venue}</div>
-            <div class="muted">By: ${actor}</div>
-            ${target ? `<div class="muted">Player: ${target}</div>` : ""}
-            ${slots ? `<div class="muted">Slots added: ${slots} | User total: ${totalSlots}</div>` : ""}
-            ${paymentMethod ? `<div class="muted">Payment: ${escapeHtml(pay.methodLabel)} | ${escapeHtml(pay.status)} | Total BDT ${totalFee} | Paid BDT ${pay.paidAmount} | Due BDT ${pay.dueAmount}</div>` : ""}
-          </div>
-        `;
-      }).join("");
+      renderAdminActivityList(entries);
     },
-    (err) => {
-      console.error(err);
-      if (els.adminActivityList) els.adminActivityList.innerHTML = `<div class="empty-box">Activity timeline unavailable right now.</div>`;
-      if (els.adminActivitySummary) els.adminActivitySummary.innerHTML = `<div class="empty-box">No summary yet.</div>`;
-      if (els.adminActivityUsers) els.adminActivityUsers.innerHTML = `<div class="empty-box">No user activity yet.</div>`;
+    () => {
+      loadAdminActivityFromBookingsFallback("Activity logs are unavailable right now. Showing current bookings.");
     }
   );
 }
@@ -3424,6 +3480,8 @@ onAuthStateChanged(auth, async (user) => {
     setView(els.authView);
   }
 });
+
+
 
 
 
