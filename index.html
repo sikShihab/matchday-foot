@@ -168,8 +168,20 @@
 
             <div class="hero-actions">
               <button id="heroBookBtn" class="primary-btn" type="button">Reserve slot</button>
-              <button id="heroCancelBtn" class="secondary-btn" type="button">Cancel slot</button>
-              <input id="heroSlotQty" class="select-input" type="number" min="1" max="4" value="1" />
+              <div class="hero-booking-cluster">
+                <button id="heroCancelBtn" class="secondary-btn hero-cancel-btn" type="button">Cancel slot</button>
+                <div class="slot-stepper" aria-label="Slot quantity">
+                  <div class="slot-stepper-copy">
+                    <span class="slot-stepper-label">Slots</span>
+                    <span class="slot-stepper-hint">Adjust booking</span>
+                  </div>
+                  <div class="slot-stepper-controls">
+                    <button id="heroQtyMinus" class="slot-stepper-btn" type="button" aria-label="Decrease slots">-</button>
+                    <input id="heroSlotQty" class="slot-stepper-input" type="number" min="1" max="4" value="1" inputmode="numeric" />
+                    <button id="heroQtyPlus" class="slot-stepper-btn" type="button" aria-label="Increase slots">+</button>
+                  </div>
+                </div>
+              </div>
               <div id="heroPaymentSwitch" class="payment-switch" role="tablist" aria-label="Payment method">
                 <button class="payment-switch-btn active" type="button" data-payment="On-spot">On-spot</button>
                 <button class="payment-switch-btn" type="button" data-payment="bKash">bKash</button>
@@ -528,61 +540,4 @@
   <script type="module" src="app-main.js?v=20260310i"></script>
 </body>
 </html>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 

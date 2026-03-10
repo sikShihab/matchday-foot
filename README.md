@@ -1,4 +1,4 @@
-# MatchDay Web App
+﻿# MatchDay Web App
 
 MatchDay is a Firebase-powered football turf booking web app with:
 - player and admin experiences
@@ -46,13 +46,14 @@ MatchDay is a Firebase-powered football turf booking web app with:
 6. Deploy the root folder to Vercel.
 
 ## Run Locally
-Serve the project with any static server from repo root, for example:
+Use the Vercel dev server from repo root so the `/api/*` routes work locally:
 
 ```bash
-npx serve .
+npx vercel dev
 ```
 
-Then open the local URL and test login + booking flow.
+Then open the local URL and test login + booking flow. Using `npx serve .` will load the frontend only and return `404` for `/api/sportmonks` and `/api/football-news`.
+
 
 ## Deployment Notes
 - `index.html` currently loads `app-main.js` as the runtime script.
@@ -70,4 +71,8 @@ Then open the local URL and test login + booking flow.
 - Add Vercel environment variable: SPORTMONKS_API_TOKEN (Project Settings -> Environment Variables).
 - Do not expose the Sportmonks token in frontend JS.
 - Lineup data is loaded on-demand per fixture from the same proxy route.
+
+
+
+
 

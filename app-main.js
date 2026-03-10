@@ -45,6 +45,7 @@ const BKASH_QR_IMAGE_URL = "https://quickchart.io/qr?text=bKash%2001623729249&si
 const CONTACT_PHONE = "01304204769";
 const CONTACT_EMAIL = "ikshihab2002@gmail.com";
 const CONTACT_FACEBOOK = "https://www.facebook.com/shihabb.zz/";
+const MAX_TOTAL_SLOTS_PER_USER = 4;
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -120,7 +121,9 @@ const els = {
   heroProgress: $("heroProgress"),
   heroBookBtn: $("heroBookBtn"),
   heroCancelBtn: $("heroCancelBtn"),
+  heroQtyMinus: $("heroQtyMinus"),
   heroSlotQty: $("heroSlotQty"),
+  heroQtyPlus: $("heroQtyPlus"),
   heroPaymentSelect: $("heroPaymentSelect"),
   heroPaymentSwitch: $("heroPaymentSwitch"),
   heroFeePreview: $("heroFeePreview"),
@@ -269,6 +272,10 @@ const LINEUP_CACHE = new Map();
 const FIXTURE_DETAIL_CACHE = new Map();
 const SPORTMONKS_PROXY_URL = "/api/sportmonks";
 const FOOTBALL_NEWS_URL = "/api/football-news";
+const FOOTBALL_NEWS_FEEDS = [
+  { source: "ESPN FC", url: "https://www.espn.com/espn/rss/soccer/news" },
+  { source: "BBC Sport", url: "https://feeds.bbci.co.uk/sport/football/rss.xml" }
+];
 let RESOLVED_COMPETITIONS = null;
 
 const POPULAR_LEAGUE_KEYWORDS = [
@@ -845,11 +852,29 @@ function getBookedSlots(bookings = []) {
 function getRequestedSlots() {
   const qty = Number(els.heroSlotQty?.value || 1);
   const normalized = Number.isFinite(qty) ? Math.floor(qty) : 1;
-  const clamped = Math.max(1, Math.min(4, normalized));
+  const inputMax = Number(els.heroSlotQty?.max || MAX_TOTAL_SLOTS_PER_USER);
+  const clamped = Math.max(1, Math.min(Number.isFinite(inputMax) ? inputMax : MAX_TOTAL_SLOTS_PER_USER, normalized));
   if (els.heroSlotQty) els.heroSlotQty.value = String(clamped);
   return clamped;
 }
 
+function syncSlotStepper() {
+  const qty = getRequestedSlots();
+  const min = Math.max(Number(els.heroSlotQty?.min || 1), 1);
+  const max = Math.max(Number(els.heroSlotQty?.max || 4), min);
+  if (els.heroQtyMinus) els.heroQtyMinus.disabled = qty <= min;
+  if (els.heroQtyPlus) els.heroQtyPlus.disabled = qty >= max;
+}
+
+function nudgeSlotQty(delta = 0) {
+  if (!els.heroSlotQty) return;
+  const qty = getRequestedSlots();
+  const min = Math.max(Number(els.heroSlotQty.min || 1), 1);
+  const max = Math.max(Number(els.heroSlotQty.max || 4), min);
+  const next = Math.max(min, Math.min(max, qty + delta));
+  els.heroSlotQty.value = String(next);
+  refreshBookingPreview();
+}
 function getPaymentDetails(paymentMethod, totalFee, options = {}) {
   const method = String(paymentMethod || "On-spot");
   const total = Math.max(Number(totalFee || 0), 0);
@@ -1000,6 +1025,7 @@ function refreshBookingPreview() {
   const feeText = Number.isFinite(fee) ? `BDT ${total}` : "Set by admin";
   const paymentMethod = String(els.heroPaymentSelect?.value || "On-spot");
   renderPaymentSwitch();
+  syncSlotStepper();
   const pay = getPaymentDetails(paymentMethod, total, {
     paymentStatus: paymentMethod.toLowerCase() === "bkash" ? "pending" : "due"
   });
@@ -1134,6 +1160,126 @@ async function fetchBangladeshTeamFixtures() {
   } catch {
     return [];
   }
+}
+function mapSportsDbEventToFixture(ev = {}, category = "Global Football") {
+  const homeScore = Number.isFinite(Number(ev?.intHomeScore)) ? Number(ev.intHomeScore) : null;
+  const awayScore = Number.isFinite(Number(ev?.intAwayScore)) ? Number(ev.intAwayScore) : null;
+  const stamp = Date.parse(`${ev?.dateEvent || "1970-01-01"}T${ev?.strTime || "00:00:00"}Z`);
+
+  return {
+    id: String(ev?.idEvent || `${ev?.idLeague || "league"}-${ev?.dateEvent || "date"}-${ev?.strHomeTeam || "home"}-${ev?.strAwayTeam || "away"}`),
+    leagueId: String(ev?.idLeague || ""),
+    category,
+    league: ev?.strLeague || "Competition",
+    season: ev?.strSeason || "",
+    round: ev?.intRound || ev?.strRound || "",
+    home: ev?.strHomeTeam || "Home",
+    away: ev?.strAwayTeam || "Away",
+    homeTeamId: String(ev?.idHomeTeam || ""),
+    awayTeamId: String(ev?.idAwayTeam || ""),
+    homeBadge: "",
+    awayBadge: "",
+    leagueLogo: LEAGUE_LOGO_CACHE.get(String(ev?.idLeague || "")) || "",
+    venue: ev?.strVenue || "",
+    venueCity: "",
+    status: ev?.strStatus || ((homeScore !== null || awayScore !== null) ? "FT" : "Scheduled"),
+    statusCode: "",
+    date: ev?.dateEvent || "",
+    time: ev?.strTime || "",
+    kickoff: formatKickoff(ev?.dateEvent || "", ev?.strTime || ""),
+    stamp: Number.isFinite(stamp) ? stamp : Number.MAX_SAFE_INTEGER,
+    homeScore,
+    awayScore
+  };
+}
+
+async function fetchCompetitionFixturesForDate(competition, isoDate) {
+  if (!competition?.id) return [];
+
+  try {
+    const res = await fetch(`https://www.thesportsdb.com/api/v1/json/123/eventsday.php?d=${encodeURIComponent(isoDate)}&id=${encodeURIComponent(String(competition.id))}`);
+    const data = await res.json();
+    const events = Array.isArray(data?.events) ? data.events : [];
+    return events.map((ev) => mapSportsDbEventToFixture(ev, competition.category || "Global Football"));
+  } catch {
+    return [];
+  }
+}
+
+async function loadClientFixtureFallback(isoDate) {
+  const competitions = await resolveCompetitions();
+  await preloadLeagueLogos(competitions);
+
+  const competitionFixtures = await Promise.all(
+    competitions.slice(0, 12).map((competition) => fetchCompetitionFixturesForDate(competition, isoDate))
+  );
+
+  const bangladeshFixtures = await fetchBangladeshTeamFixtures();
+  const seen = new Set();
+  const deduped = [...competitionFixtures.flat(), ...bangladeshFixtures].filter((item) => {
+    const key = `${item.id}::${item.home}::${item.away}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  await preloadTeamBadges(deduped);
+  return deduped.map((item) => ({
+    ...item,
+    leagueLogo: item.leagueLogo || LEAGUE_LOGO_CACHE.get(String(item.leagueId || "")) || "",
+    homeBadge: item.homeBadge || TEAM_BADGE_CACHE.get(String(item.homeTeamId || "")) || "",
+    awayBadge: item.awayBadge || TEAM_BADGE_CACHE.get(String(item.awayTeamId || "")) || ""
+  }));
+}
+
+function buildLocalNewsFallback() {
+  const topics = [
+    "Premier League news",
+    "Champions League news",
+    "La Liga news",
+    "Transfer news football",
+    "Bangladesh football news",
+    "Women's football news"
+  ];
+
+  return topics.map((topic) => ({
+    title: topic,
+    competition: "Football News",
+    source: "Google News",
+    publishedAt: "",
+    thumbnail: `https://placehold.co/960x540/111318/f7f8fb?text=${encodeURIComponent(topic)}`,
+    url: `https://news.google.com/search?q=${encodeURIComponent(topic)}`
+  }));
+}
+
+async function loadBrowserNewsFallback() {
+  const feedLists = await Promise.all(FOOTBALL_NEWS_FEEDS.map(async (feed) => {
+    try {
+      const resp = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(feed.url)}`);
+      const payload = await resp.json();
+      const items = Array.isArray(payload?.items) ? payload.items : [];
+      return items.slice(0, 10).map((item) => ({
+        title: item.title || "Football story",
+        competition: "Football News",
+        source: feed.source,
+        publishedAt: item.pubDate ? new Date(item.pubDate).toLocaleString() : "",
+        thumbnail: item.thumbnail || item.enclosure?.link || "https://placehold.co/960x540/111318/f7f8fb?text=Football+News",
+        url: item.link || "#"
+      })).filter((item) => item.url && item.url !== "#");
+    } catch {
+      return [];
+    }
+  }));
+
+  const seen = new Set();
+  const merged = feedLists.flat().filter((item) => {
+    const key = `${item.title}::${item.url}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  return merged.length ? merged.slice(0, 18) : buildLocalNewsFallback();
 }
 function buildReceiptImage(data) {
   const canvas = document.createElement("canvas");
@@ -1713,18 +1859,26 @@ async function loadDailyFixtures(options = {}) {
 
   setButtonLoading(els.refreshFixturesBtn, true, "Refreshing...");
   try {
-    const resp = await fetch(`${SPORTMONKS_PROXY_URL}?type=fixtures&date=${encodeURIComponent(isoDate)}`);
-    const payload = await resp.json();
+    let mapped = [];
+    let sourceLabel = "Service";
 
-    if (!resp.ok || !payload?.ok) {
-      throw new Error(payload?.error || "Live match service error.");
+    try {
+      const resp = await fetch(`${SPORTMONKS_PROXY_URL}?type=fixtures&date=${encodeURIComponent(isoDate)}`);
+      const payload = await resp.json();
+      if (!resp.ok || !payload?.ok) {
+        throw new Error(payload?.error || "Live match service error.");
+      }
+
+      mapped = (Array.isArray(payload.fixtures) ? payload.fixtures : []).map((item) => ({
+        ...item,
+        category: item.category || "Global Football",
+        kickoff: formatKickoff(item.date, item.time)
+      }));
+    } catch (serviceErr) {
+      mapped = await loadClientFixtureFallback(isoDate);
+      if (!mapped.length) throw serviceErr;
+      sourceLabel = "Browser fallback";
     }
-
-    const mapped = (Array.isArray(payload.fixtures) ? payload.fixtures : []).map((item) => ({
-      ...item,
-      category: "Global Football",
-      kickoff: formatKickoff(item.date, item.time)
-    }));
 
     mapped.forEach((item) => {
       if (item.leagueId && item.leagueLogo) LEAGUE_LOGO_CACHE.set(String(item.leagueId), item.leagueLogo);
@@ -1733,6 +1887,9 @@ async function loadDailyFixtures(options = {}) {
     });
 
     state.fixturesLastLoadedAt = Date.now();
+    if (els.fixturesDate) {
+      els.fixturesDate.textContent = `Updated: ${now.toLocaleString()} | Source: ${sourceLabel} | Auto refresh: 45s`;
+    }
     renderFixtures(mapped);
   } catch (err) {
     console.error(err);
@@ -1748,8 +1905,9 @@ async function loadFootballNews() {
   try {
     const resp = await fetch(FOOTBALL_NEWS_URL);
     const payload = await resp.json();
+    if (!resp.ok || payload?.ok === false) throw new Error(payload?.error || "Football news failed");
     const items = Array.isArray(payload?.items) ? payload.items : [];
-    return items.map((item) => ({
+    const mapped = items.map((item) => ({
       title: item.title || "Football story",
       competition: item.competition || "Football News",
       source: item.source || "Football News",
@@ -1757,8 +1915,11 @@ async function loadFootballNews() {
       thumbnail: item.thumbnail || "https://placehold.co/960x540/111318/f7f8fb?text=Football+News",
       url: item.url || "#"
     })).filter((item) => item.url && item.url !== "#");
+
+    if (mapped.length) return mapped;
+    throw new Error("No football news returned");
   } catch {
-    return [];
+    return await loadBrowserNewsFallback();
   }
 }
 async function loadSportsDbHighlights() {
@@ -2617,7 +2778,7 @@ function updateHero(match, bookings) {
   const percent = total ? Math.round((booked / total) * 100) : 0;
   const myBooking = state.user ? bookings.find((b) => b.userId === state.user.uid) : null;
   const mySlots = Math.max(Number(myBooking?.slots || 0), 0);
-  const canTakeMoreForUser = Math.max(4 - mySlots, 0);
+  const canTakeMoreForUser = Math.max(MAX_TOTAL_SLOTS_PER_USER - mySlots, 0);
   const isClosed = match.status === "closed" || left <= 0 || canTakeMoreForUser <= 0;
 
   const lat = Number(match.latitude);
@@ -2801,8 +2962,8 @@ async function bookMatchDirect({ bkashConfirmed = false, bkashLast3 = "" } = {})
     const requestedSlots = getRequestedSlots();
     const extraNames = parseExtraPlayerNames();
 
-    if (requestedSlots > 4) {
-      showToast("Maximum 4 slots per booking.");
+    if (requestedSlots > MAX_TOTAL_SLOTS_PER_USER) {
+      showToast(`One player can hold maximum ${MAX_TOTAL_SLOTS_PER_USER} total slots.`);
       return;
     }
 
@@ -2849,13 +3010,13 @@ async function bookMatchDirect({ bkashConfirmed = false, bkashLast3 = "" } = {})
     }
 
     const newSlots = existingSlots + requestedSlots;
-    if (newSlots > 4) {
-      showToast("One player can hold maximum 4 slots.");
+    if (newSlots > MAX_TOTAL_SLOTS_PER_USER) {
+      showToast(`One player can hold maximum ${MAX_TOTAL_SLOTS_PER_USER} total slots.`);
       return;
     }
 
     const previousNames = Array.isArray(existingData?.extraPlayerNames) ? existingData.extraPlayerNames : [];
-    const combinedExtraNames = [...previousNames, ...extraNames].slice(0, 3);
+    const combinedExtraNames = [...previousNames, ...extraNames].slice(0, MAX_TOTAL_SLOTS_PER_USER - 1);
     const unitFee = Number(match.slotFee || 0);
     const totalFee = unitFee * newSlots;
     const p = state.userProfile || {};
@@ -3201,6 +3362,8 @@ on(els.bkashContinueBtn, "click", continueBkashBooking);
 on(els.profileForm, "submit", saveProfile);
 on(els.heroBookBtn, "click", startBookingFlow);
 on(els.heroCancelBtn, "click", cancelBookingDirect);
+on(els.heroQtyMinus, "click", () => nudgeSlotQty(-1));
+on(els.heroQtyPlus, "click", () => nudgeSlotQty(1));
 on(els.heroDownloadBtn, "click", downloadPoster);
 on(els.heroSlotQty, "input", refreshBookingPreview);
 on(els.extraPlayersList, "input", refreshBookingPreview);
@@ -3261,157 +3424,6 @@ onAuthStateChanged(auth, async (user) => {
     setView(els.authView);
   }
 });
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
