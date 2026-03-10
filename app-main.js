@@ -2193,207 +2193,152 @@ function renderActivityAction(action) {
 function renderAdminActivitySummary(items = []) {
   if (!els.adminActivitySummary) return;
 
-  const now = Date.now();
-  const startOfDay = new Date();
-  startOfDay.setHours(0, 0, 0, 0);
-  const startMs = startOfDay.getTime();
-
-  const todayItems = items.filter((item) => {
-    const ts = item.createdAt?.toDate?.()?.getTime?.() || 0;
-    return ts >= startMs && ts <= now;
-  });
-
-  const totals = {
-    logins: todayItems.filter((i) => i.action === "login").length,
-    bookings: todayItems.filter((i) => i.action === "booked").length,
-    cancels: todayItems.filter((i) => i.action === "cancelled").length,
-    slots: todayItems.reduce((sum, i) => sum + Math.max(Number(i.slotsAdded || 0), 0), 0)
-  };
-
-  const paymentBreakdown = todayItems.reduce((acc, i) => {
-    if (i.action !== "booked") return acc;
-    const pay = getStoredPaymentDetails(i);
-    const key = `${pay.methodLabel} (${pay.status})`;
-    if (!acc[key]) acc[key] = { count: 0, total: 0, paid: 0, due: 0 };
-    acc[key].count += 1;
-    acc[key].total += pay.totalFee;
-    acc[key].paid += pay.paidAmount;
-    acc[key].due += pay.dueAmount;
+  const totals = items.reduce((acc, item) => {
+    const pay = getStoredPaymentDetails(item);
+    acc.players += 1;
+    acc.slots += Math.max(Number(item.slotsAdded || item.slots || 0), 0);
+    if ((item.paymentMethod || "").toLowerCase() === "bkash") acc.bkash += 1;
+    else acc.onSpot += 1;
+    acc.paid += pay.paidAmount;
+    acc.due += pay.dueAmount;
     return acc;
-  }, {});
-
-  const paymentText = Object.keys(paymentBreakdown).length
-    ? Object.entries(paymentBreakdown).map(([k, v]) => `${k}: ${v.count} booking(s), Total BDT ${v.total}, Paid BDT ${v.paid}, Due BDT ${v.due}`).join(" | ")
-    : "No payment data today";
+  }, { players: 0, slots: 0, bkash: 0, onSpot: 0, paid: 0, due: 0 });
 
   els.adminActivitySummary.innerHTML = `
-    <article class="analytics-card"><div class="panel-label">Today logins</div><strong>${totals.logins}</strong></article>
-    <article class="analytics-card"><div class="panel-label">Today bookings</div><strong>${totals.bookings}</strong></article>
-    <article class="analytics-card"><div class="panel-label">Today cancellations</div><strong>${totals.cancels}</strong></article>
-    <article class="analytics-card"><div class="panel-label">Slots booked today</div><strong>${totals.slots}</strong></article>
-    <article class="analytics-card full"><div class="panel-label">Payment mix (today)</div><strong>${escapeHtml(paymentText)}</strong></article>
+    <article class="analytics-card"><div class="panel-label">Players booked</div><strong>${totals.players}</strong></article>
+    <article class="analytics-card"><div class="panel-label">Slots reserved</div><strong>${totals.slots}</strong></article>
+    <article class="analytics-card"><div class="panel-label">bKash chosen</div><strong>${totals.bkash}</strong></article>
+    <article class="analytics-card"><div class="panel-label">On-spot chosen</div><strong>${totals.onSpot}</strong></article>
+    <article class="analytics-card"><div class="panel-label">Paid total</div><strong>BDT ${totals.paid}</strong></article>
+    <article class="analytics-card"><div class="panel-label">Due total</div><strong>BDT ${totals.due}</strong></article>
   `;
 }
 
 function renderAdminUserStats(items = []) {
   if (!els.adminActivityUsers) return;
 
-  const byUser = new Map();
-  items.forEach((item) => {
-    const userId = item.targetUserId || item.actorUserId || "unknown";
-    const key = `${userId}`;
-    const row = byUser.get(key) || {
-      userId: key,
-      name: item.targetName || item.actorName || "User",
-      email: item.targetEmail || item.actorEmail || "",
-      logins: 0,
-      bookings: 0,
-      cancels: 0,
-      slots: 0,
-      bkash: 0,
-      onSpot: 0,
-      totalAmount: 0,
-      paidAmount: 0,
-      dueAmount: 0
-    };
-
-    if (item.action === "login") row.logins += 1;
-    if (item.action === "booked") {
-      row.bookings += 1;
-      row.slots += Math.max(Number(item.slotsAdded || 0), 0);
-      if ((item.paymentMethod || "").toLowerCase() === "bkash") row.bkash += 1;
-      else row.onSpot += 1;
-      const pay = getStoredPaymentDetails(item);
-      row.totalAmount += pay.totalFee;
-      row.paidAmount += pay.paidAmount;
-      row.dueAmount += pay.dueAmount;
-    }
-    if (item.action === "cancelled") row.cancels += 1;
-
-    byUser.set(key, row);
-  });
-
-  const rows = Array.from(byUser.values())
-    .sort((a, b) => (b.bookings - a.bookings) || (b.slots - a.slots))
-    .slice(0, 50);
-
-  if (!rows.length) {
-    els.adminActivityUsers.innerHTML = `<div class="empty-box">No user activity yet.</div>`;
+  if (!items.length) {
+    els.adminActivityUsers.innerHTML = `<div class="empty-box">No player bookings yet.</div>`;
     return;
   }
+
+  const rows = [...items].sort((a, b) => {
+    const dueDiff = Math.max(Number(b.dueAmount || 0), 0) - Math.max(Number(a.dueAmount || 0), 0);
+    if (dueDiff !== 0) return dueDiff;
+    return (b.createdAt?.toDate?.()?.getTime?.() || 0) - (a.createdAt?.toDate?.()?.getTime?.() || 0);
+  });
 
   els.adminActivityUsers.innerHTML = `
     <div class="stats-table-wrap">
       <table class="stats-table">
         <thead>
-          <tr><th>User</th><th>Logins</th><th>Bookings</th><th>Cancels</th><th>Slots</th><th>bKash</th><th>On-spot</th><th>Total (BDT)</th><th>Paid (BDT)</th><th>Due (BDT)</th></tr>
+          <tr><th>Player</th><th>Match</th><th>Slots</th><th>Payment</th><th>Status</th><th>Paid</th><th>Due</th><th>Updated</th></tr>
         </thead>
         <tbody>
-          ${rows.map((r) => `
-            <tr>
-              <td><strong>${escapeHtml(r.name)}</strong><div class="muted">${escapeHtml(r.email)}</div></td>
-              <td>${r.logins}</td>
-              <td>${r.bookings}</td>
-              <td>${r.cancels}</td>
-              <td>${r.slots}</td>
-              <td>${r.bkash}</td>
-              <td>${r.onSpot}</td>
-              <td>${r.totalAmount}</td>
-              <td>${r.paidAmount}</td>
-              <td>${r.dueAmount}</td>
-            </tr>
-          `).join("")}
+          ${rows.map((item) => {
+            const pay = getStoredPaymentDetails(item);
+            const updated = item.createdAt?.toDate?.() ? item.createdAt.toDate().toLocaleString() : (item.whenText || "");
+            return `
+              <tr>
+                <td><strong>${escapeHtml(item.targetName || item.actorName || "Player")}</strong><div class="muted">${escapeHtml(item.targetEmail || item.actorEmail || "")}</div></td>
+                <td>${escapeHtml(item.matchLocation || item.matchLabel || item.matchId || "Match")}</td>
+                <td>${Math.max(Number(item.slotsAdded || item.slots || 0), 0)}</td>
+                <td>${escapeHtml(pay.methodLabel)}</td>
+                <td>${escapeHtml(pay.status)}</td>
+                <td>${pay.paidAmount}</td>
+                <td>${pay.dueAmount}</td>
+                <td>${escapeHtml(updated)}</td>
+              </tr>
+            `;
+          }).join("")}
         </tbody>
       </table>
     </div>
   `;
 }
 
-function renderAdminActivityList(entries = [], options = {}) {
+function renderAdminActivityList(items = [], options = {}) {
   if (!els.adminActivityList) return;
 
+  const dueRows = items.filter((item) => Math.max(Number(item.dueAmount || 0), 0) > 0);
   const { message = "" } = options || {};
   const note = message ? `<div class="empty-box">${escapeHtml(message)}</div>` : "";
-  if (!entries.length) {
-    els.adminActivityList.innerHTML = note || `<div class="empty-box">No slot activity yet.</div>`;
+
+  if (!dueRows.length) {
+    els.adminActivityList.innerHTML = note || `<div class="empty-box">No due payments right now.</div>`;
     return;
   }
 
-  const cards = entries.map((item) => {
-    const when = item.createdAt?.toDate?.() ? item.createdAt.toDate().toLocaleString() : (item.whenText || "");
-    const actor = escapeHtml(item.actorName || item.actorEmail || "User");
-    const target = escapeHtml(item.targetName || item.targetEmail || "");
-    const paymentMethod = String(item.paymentMethod || "");
+  els.adminActivityList.innerHTML = note + dueRows.map((item) => {
     const pay = getStoredPaymentDetails(item);
-    const totalFee = pay.totalFee;
-    const venue = escapeHtml(item.matchLocation || "Venue");
-    const slots = Math.max(Number(item.slotsAdded || 0), 0);
-    const totalSlots = Math.max(Number(item.totalSlotsForUser || 0), 0);
+    const updated = item.createdAt?.toDate?.() ? item.createdAt.toDate().toLocaleString() : (item.whenText || "");
+    const name = escapeHtml(item.targetName || item.actorName || "Player");
+    const email = escapeHtml(item.targetEmail || item.actorEmail || "");
+    const matchText = escapeHtml(item.matchLocation || item.matchLabel || item.matchId || "Match");
+    const slots = Math.max(Number(item.slotsAdded || item.slots || 0), 0);
 
     return `
       <div class="announcement-card activity-card">
         <div class="activity-head">
-          <strong>${renderActivityAction(item.action)}</strong>
-          <span class="muted">${when}</span>
+          <strong>${name}</strong>
+          <span class="muted">${escapeHtml(updated)}</span>
         </div>
-        <div class="muted">Match: ${venue}</div>
-        <div class="muted">By: ${actor}</div>
-        ${target ? `<div class="muted">Player: ${target}</div>` : ""}
-        ${slots ? `<div class="muted">Slots added: ${slots} | User total: ${totalSlots}</div>` : ""}
-        ${paymentMethod ? `<div class="muted">Payment: ${escapeHtml(pay.methodLabel)} | ${escapeHtml(pay.status)} | Total BDT ${totalFee} | Paid BDT ${pay.paidAmount} | Due BDT ${pay.dueAmount}</div>` : ""}
+        <div class="muted">${email}</div>
+        <div class="muted">Match: ${matchText}</div>
+        <div class="muted">Slots: ${slots}</div>
+        <div class="muted">Payment: ${escapeHtml(pay.methodLabel)} | ${escapeHtml(pay.status)} | Due BDT ${pay.dueAmount}</div>
       </div>
     `;
   }).join("");
-
-  els.adminActivityList.innerHTML = note + cards;
 }
 
-async function loadAdminActivityFromBookingsFallback(message = "") {
-  try {
-    const snap = await getDocs(collectionGroup(db, "bookings"));
-    const entries = snap.docs.map((docSnap) => {
-      const item = docSnap.data() || {};
-      const matchRef = docSnap.ref.parent?.parent;
-      return {
-        action: "booked",
-        matchId: matchRef?.id || "",
-        matchLabel: item.matchLabel || "Match",
-        matchLocation: item.venue || item.location || "Venue",
-        actorUserId: item.userId || docSnap.id,
-        actorName: item.name || item.email?.split("@")[0] || "User",
-        actorEmail: item.email || "",
-        targetUserId: item.userId || docSnap.id,
-        targetName: item.name || "",
-        targetEmail: item.email || "",
-        paymentMethod: item.paymentMethod || "On-spot",
-        paymentStatus: item.paymentStatus || "",
-        dueAmount: Number(item.dueAmount || 0),
-        paidAmount: Number(item.paidAmount || 0),
-        slotFee: Number(item.slotFee || 0),
-        slotsAdded: Math.max(Number(item.slots || 0), 0),
-        totalSlotsForUser: Math.max(Number(item.slots || 0), 0),
-        totalFee: Number(item.totalFee || 0),
-        createdAt: item.updatedAt || item.createdAt || null,
-        whenText: item.updatedAt?.toDate?.() ? item.updatedAt.toDate().toLocaleString() : "Current booking"
-      };
-    }).sort((a, b) => (b.createdAt?.toDate?.()?.getTime?.() || 0) - (a.createdAt?.toDate?.()?.getTime?.() || 0));
+function mapBookingDocToTrackerEntry(docSnap) {
+  const item = docSnap.data() || {};
+  const matchRef = docSnap.ref.parent?.parent;
+  const matchId = matchRef?.id || "";
+  return {
+    action: "booked",
+    matchId,
+    matchLabel: item.matchLabel || "Match",
+    matchLocation: item.matchLocation || item.venue || item.location || `Match ${matchId || "session"}`,
+    actorUserId: item.userId || docSnap.id,
+    actorName: item.name || item.email?.split("@")[0] || "User",
+    actorEmail: item.email || "",
+    targetUserId: item.userId || docSnap.id,
+    targetName: item.name || "",
+    targetEmail: item.email || "",
+    paymentMethod: item.paymentMethod || "On-spot",
+    paymentStatus: item.paymentStatus || "",
+    dueAmount: Number(item.dueAmount || 0),
+    paidAmount: Number(item.paidAmount || 0),
+    slotFee: Number(item.slotFee || 0),
+    slotsAdded: Math.max(Number(item.slots || 0), 0),
+    totalSlotsForUser: Math.max(Number(item.slots || 0), 0),
+    totalFee: Number(item.totalFee || 0),
+    createdAt: item.updatedAt || item.createdAt || null,
+    whenText: item.updatedAt?.toDate?.() ? item.updatedAt.toDate().toLocaleString() : "Current booking"
+  };
+}
 
-    if (!entries.length) {
-      if (els.adminActivitySummary) els.adminActivitySummary.innerHTML = `<div class="empty-box">No summary yet.</div>`;
-      if (els.adminActivityUsers) els.adminActivityUsers.innerHTML = `<div class="empty-box">No user activity yet.</div>`;
-      if (els.adminActivityList) els.adminActivityList.innerHTML = `<div class="empty-box">No slot activity yet.</div>`;
-      return;
+function listenAdminActivity() {
+  state.activityUnsub?.();
+  state.activityUnsub = onSnapshot(
+    collectionGroup(db, "bookings"),
+    (snap) => {
+      const entries = snap.docs
+        .map((docSnap) => mapBookingDocToTrackerEntry(docSnap))
+        .sort((a, b) => (b.createdAt?.toDate?.()?.getTime?.() || 0) - (a.createdAt?.toDate?.()?.getTime?.() || 0));
+
+      renderAdminActivitySummary(entries);
+      renderAdminUserStats(entries);
+      renderAdminActivityList(entries);
+    },
+    () => {
+      if (els.adminActivitySummary) els.adminActivitySummary.innerHTML = `<div class="empty-box">Could not load booking summary.</div>`;
+      if (els.adminActivityUsers) els.adminActivityUsers.innerHTML = `<div class="empty-box">Could not load player payment list.</div>`;
+      if (els.adminActivityList) els.adminActivityList.innerHTML = `<div class="empty-box">Could not load due payment list.</div>`;
     }
-
-    renderAdminActivitySummary(entries);
-    renderAdminUserStats(entries);
-    renderAdminActivityList(entries, { message: message || "Showing current booking state." });
-  } catch (err) {
-    console.error(err);
-    if (els.adminActivityList) els.adminActivityList.innerHTML = `<div class="empty-box">Activity timeline unavailable right now.</div>`;
-    if (els.adminActivitySummary) els.adminActivitySummary.innerHTML = `<div class="empty-box">No summary yet.</div>`;
-    if (els.adminActivityUsers) els.adminActivityUsers.innerHTML = `<div class="empty-box">No user activity yet.</div>`;
-  }
+  );
 }
 function ensureLoginActivityLogged(user) {
   if (!user) return;
@@ -2409,33 +2354,6 @@ function ensureLoginActivityLogged(user) {
   } catch {
     // ignore sessionStorage failures
   }
-}
-
-function listenAdminActivity() {
-  state.activityUnsub?.();
-  state.activityUnsub = onSnapshot(
-    collection(db, "activityLogs"),
-    (snap) => {
-      if (!els.adminActivityList) return;
-
-      if (snap.empty) {
-        loadAdminActivityFromBookingsFallback("No activity logs yet. Showing current bookings.");
-        return;
-      }
-
-      const entries = snap.docs
-        .map((d) => d.data())
-        .sort((a, b) => (b.createdAt?.toDate?.()?.getTime?.() || 0) - (a.createdAt?.toDate?.()?.getTime?.() || 0))
-        .slice(0, 300);
-
-      renderAdminActivitySummary(entries);
-      renderAdminUserStats(entries);
-      renderAdminActivityList(entries);
-    },
-    () => {
-      loadAdminActivityFromBookingsFallback("Activity logs are unavailable right now. Showing current bookings.");
-    }
-  );
 }
 function authUiMode(mode) {
   authMode = mode;
@@ -3089,6 +3007,8 @@ async function bookMatchDirect({ bkashConfirmed = false, bkashLast3 = "" } = {})
       paymentStatus,
       dueAmount,
       paidAmount,
+      matchLabel: match.label || "Match",
+      matchLocation: match.location || "Venue",
       bkashLast3: selectedPayment === "bKash" ? String(bkashLast3 || existingData?.bkashLast3 || "") : "",
       slotFee: unitFee,
       slots: newSlots,
@@ -3106,6 +3026,8 @@ async function bookMatchDirect({ bkashConfirmed = false, bkashLast3 = "" } = {})
       paymentStatus,
       dueAmount,
       paidAmount,
+      matchLabel: match.label || "Match",
+      matchLocation: match.location || "Venue",
       slotFee: unitFee,
       slotsAdded: requestedSlots,
       totalSlotsForUser: newSlots,
@@ -3480,6 +3402,10 @@ onAuthStateChanged(auth, async (user) => {
     setView(els.authView);
   }
 });
+
+
+
+
 
 
 
