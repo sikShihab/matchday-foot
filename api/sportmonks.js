@@ -2,20 +2,21 @@ const SPORTMONKS_BASE = "https://api.sportmonks.com/v3/football";
 const THESPORTSDB_BASE = "https://www.thesportsdb.com/api/v1/json/123";
 
 const FEATURED_COMPETITIONS = [
-  { id: "4480", name: "UEFA Champions League", category: "Top Leagues" },
-  { id: "4328", name: "Premier League", category: "Top Leagues" },
-  { id: "4335", name: "LaLiga", category: "Top Leagues" },
-  { id: "4332", name: "Serie A", category: "Top Leagues" },
-  { id: "4331", name: "Bundesliga", category: "Top Leagues" },
-  { id: "4334", name: "Ligue 1", category: "Top Leagues" },
-  { id: "4370", name: "FA Cup", category: "Top Leagues" },
-  { id: "4481", name: "UEFA Europa League", category: "Top Leagues" },
-  { id: "4396", name: "Copa del Rey", category: "Top Leagues" },
-  { id: "4487", name: "AFC Champions League", category: "Top Leagues" },
-  { id: "4829", name: "Bangladesh Premier League", category: "Top Leagues" }
+  { id: "4480", slug: "uefa.champions", name: "UEFA Champions League", category: "Top Leagues" },
+  { id: "4328", slug: "eng.1", name: "Premier League", category: "Top Leagues" },
+  { id: "4335", slug: "esp.1", name: "LaLiga", category: "Top Leagues" },
+  { id: "4332", slug: "ita.1", name: "Serie A", category: "Top Leagues" },
+  { id: "4331", slug: "ger.1", name: "Bundesliga", category: "Top Leagues" },
+  { id: "4334", slug: "fra.1", name: "Ligue 1", category: "Top Leagues" },
+  { id: "4370", slug: "eng.fa", name: "FA Cup", category: "Top Leagues" },
+  { id: "4481", slug: "uefa.europa", name: "UEFA Europa League", category: "Top Leagues" },
+  { id: "4396", slug: "esp.copa_del_rey", name: "Copa del Rey", category: "Top Leagues" },
+  { id: "4487", slug: "afc.champions", name: "AFC Champions League", category: "Top Leagues" },
+  { id: "4829", slug: "ban.1", name: "Bangladesh Premier League", category: "Top Leagues" }
 ];
 
 const LEAGUE_META_CACHE = new Map();
+const ESPN_SCOREBOARD_BASE = "https://site.api.espn.com/apis/site/v2/sports/soccer";
 function toIsoDate(d = new Date()) {
   const year = d.getUTCFullYear();
   const month = String(d.getUTCMonth() + 1).padStart(2, "0");
@@ -460,6 +461,97 @@ async function fetchFeaturedCompetitionFixtures(date) {
   return Array.from(deduped.values());
 }
 
+async function espnFetchCompetitionScoreboard(slug = "", date = "") {
+  if (!slug) return { events: [], league: null };
+  const dateParam = String(date || "").replace(/-/g, "");
+  const url = `${ESPN_SCOREBOARD_BASE}/${slug}/scoreboard${dateParam ? `?dates=${dateParam}` : ""}`;
+  const { controller, clear } = withTimeout(12000);
+  try {
+    const resp = await fetch(url, {
+      method: "GET",
+      headers: { Accept: "application/json" },
+      signal: controller.signal
+    });
+    if (!resp.ok) throw new Error(`Featured schedule error (${resp.status})`);
+    return await resp.json();
+  } finally {
+    clear();
+  }
+}
+
+function normalizeEspnStatus(type = {}) {
+  const state = String(type?.state || "").toLowerCase();
+  const detail = String(type?.shortDetail || type?.detail || type?.description || "").trim();
+  if (state === "in" || state === "live") return detail || "LIVE";
+  if (state === "post") return detail || type?.abbreviation || "FT";
+  if (state === "pre") return detail || type?.shortDetail || "Scheduled";
+  return detail || type?.description || "Scheduled";
+}
+
+function mapEspnEvent(event = {}, competition = {}, payload = {}) {
+  const comp = Array.isArray(event?.competitions) ? event.competitions[0] || {} : {};
+  const competitors = Array.isArray(comp?.competitors) ? comp.competitors : [];
+  const home = competitors.find((item) => String(item?.homeAway || "").toLowerCase() === "home") || competitors[0] || {};
+  const away = competitors.find((item) => String(item?.homeAway || "").toLowerCase() === "away") || competitors[1] || {};
+  const statusType = comp?.status?.type || event?.status?.type || {};
+  const kickoffIso = String(event?.date || comp?.date || "");
+  const kickoffDate = kickoffIso ? new Date(kickoffIso) : null;
+  const league = Array.isArray(payload?.leagues) ? payload.leagues[0] || {} : {};
+  const venue = comp?.venue?.fullName || comp?.venue?.address?.city || "";
+
+  return {
+    id: String(event?.id || comp?.id || ""),
+    leagueId: String(competition?.id || league?.id || ""),
+    league: competition?.name || league?.name || "Competition",
+    leagueLogo: competition?.logo || league?.logos?.[0]?.href || "",
+    category: competition?.category || "Top Leagues",
+    season: String(league?.season?.year || ""),
+    round: String(comp?.format?.summary || event?.week?.text || ""),
+    venue,
+    venueCity: comp?.venue?.address?.city || "",
+    status: normalizeEspnStatus(statusType),
+    statusCode: String(statusType?.state || statusType?.name || statusType?.description || ""),
+    date: kickoffDate && !Number.isNaN(kickoffDate.getTime()) ? kickoffDate.toISOString().slice(0, 10) : "",
+    time: kickoffDate && !Number.isNaN(kickoffDate.getTime()) ? kickoffDate.toISOString().slice(11, 16) : "",
+    kickoffIso,
+    stamp: kickoffDate && !Number.isNaN(kickoffDate.getTime()) ? kickoffDate.getTime() : Number.MAX_SAFE_INTEGER,
+    home: home?.team?.displayName || home?.team?.shortDisplayName || "Home",
+    away: away?.team?.displayName || away?.team?.shortDisplayName || "Away",
+    homeTeamId: String(home?.team?.id || ""),
+    awayTeamId: String(away?.team?.id || ""),
+    homeBadge: home?.team?.logo || home?.team?.logos?.[0]?.href || "",
+    awayBadge: away?.team?.logo || away?.team?.logos?.[0]?.href || "",
+    homeScore: Number.isFinite(Number(home?.score)) ? Number(home.score) : null,
+    awayScore: Number.isFinite(Number(away?.score)) ? Number(away.score) : null
+  };
+}
+
+async function fetchEspnFeaturedFixtures(date) {
+  const competitions = FEATURED_COMPETITIONS.filter((competition) => competition?.slug);
+  const bundles = await Promise.all(competitions.map(async (competition) => {
+    try {
+      const payload = await espnFetchCompetitionScoreboard(competition.slug, date);
+      const league = Array.isArray(payload?.leagues) ? payload.leagues[0] || {} : {};
+      const enriched = {
+        ...competition,
+        name: competition.name,
+        logo: league?.logos?.[0]?.href || competition?.logo || ""
+      };
+      const events = Array.isArray(payload?.events) ? payload.events : [];
+      return events.map((event) => mapEspnEvent(event, enriched, payload)).filter((fixture) => fixture.id);
+    } catch {
+      return [];
+    }
+  }));
+
+  const deduped = new Map();
+  bundles.flat().forEach((fixture) => {
+    if (!fixture?.id) return;
+    if (!deduped.has(fixture.id)) deduped.set(fixture.id, fixture);
+  });
+  return Array.from(deduped.values());
+}
+
 function mapSportsDbStats(ev = {}) {
   const pairs = [
     ["Shots", ev?.intHomeShots, ev?.intAwayShots],
@@ -500,14 +592,15 @@ async function fallbackFixtures(date) {
     return events.map(mapSportsDbEvent).filter((item) => item.id);
   };
 
-  const [featured, prev, today, next] = await Promise.all([
+  const [featured, espnFeatured, prev, today, next] = await Promise.all([
     fetchFeaturedCompetitionFixtures(date).catch(() => []),
+    fetchEspnFeaturedFixtures(date).catch(() => []),
     loadEvents(addDays(date, -1)).catch(() => []),
     loadEvents(date).catch(() => []),
     loadEvents(addDays(date, 1)).catch(() => [])
   ]);
 
-  const merged = [...featured, ...prev, ...today, ...next];
+  const merged = [...featured, ...espnFeatured, ...prev, ...today, ...next];
   const map = new Map();
   merged.forEach((fixture) => {
     if (!fixture?.id) return;
@@ -653,10 +746,14 @@ module.exports = async (req, res) => {
         .sort((a, b) => a.stamp - b.stamp)
         .slice(0, 300);
 
-      const featuredFixtures = await fetchFeaturedCompetitionFixtures(date).catch(() => []);
-      if (featuredFixtures.length) {
+      const [featuredFixtures, espnFixtures] = await Promise.all([
+        fetchFeaturedCompetitionFixtures(date).catch(() => []),
+        fetchEspnFeaturedFixtures(date).catch(() => [])
+      ]);
+      const supplementalFixtures = [...featuredFixtures, ...espnFixtures];
+      if (supplementalFixtures.length) {
         const supplemented = new Map(fixtures.map((fixture) => [fixture.id, fixture]));
-        featuredFixtures.forEach((fixture) => {
+        supplementalFixtures.forEach((fixture) => {
           if (!fixture?.id) return;
           const current = supplemented.get(fixture.id);
           if (!current) {
